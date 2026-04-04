@@ -19,7 +19,7 @@ class SharedCostTracker:
     The spend cap is a SOFT cap — it is enforced AFTER an LLM call completes.
     The triggering call has already been billed. All subsequent calls are blocked.
     """
-    def __init__(self, max_spend: float = 0.50):
+    def __init__(self, max_spend: float = float('inf')):
         self.max_spend = max_spend
         self.total_cost_usd = 0.0
         self._lock = threading.Lock()

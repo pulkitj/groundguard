@@ -91,10 +91,15 @@ class ResultBuilder:
         # Set of valid source IDs to scrub hallucinated ones
         valid_source_ids = {s.source_id for s in ctx.original_sources}
 
+        # Build claim_text -> claim_type lookup from Tier 0 classification
+        atom_types: dict[str, str] = {
+            a.claim_text: a.claim_type for a in ctx.tier0_atoms
+        }
+
         atomic_claims = [
             AtomicClaimResult(
                 claim_text=v.claim_text,
-                claim_type="Extractive",  # conservative default; LLM may override in verifications
+                claim_type=atom_types.get(v.claim_text, "Extractive"),  # fallback to Extractive
                 status=v.status,
                 source_id=v.source_id,
                 source_excerpt=v.source_excerpt,

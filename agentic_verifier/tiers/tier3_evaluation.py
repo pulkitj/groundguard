@@ -2,7 +2,6 @@
 from __future__ import annotations
 import json
 import re as _re
-import logging
 import pydantic
 from typing import TYPE_CHECKING
 
@@ -141,7 +140,7 @@ def evaluate(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3ResponseMode
 
         try:
             return parse_response(response)
-        except pydantic.ValidationError as e:
+        except (pydantic.ValidationError, ValueError) as e:
             logger.warning(
                 "Tier 3 attempt %d/2 failed validation — retrying with temperature=0.1",
                 attempt + 1,
@@ -180,7 +179,7 @@ async def evaluate_async(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3
 
         try:
             return parse_response(response)
-        except pydantic.ValidationError as e:
+        except (pydantic.ValidationError, ValueError) as e:
             logger.warning(
                 "Tier 3 async attempt %d/2 failed validation — retrying",
                 attempt + 1,

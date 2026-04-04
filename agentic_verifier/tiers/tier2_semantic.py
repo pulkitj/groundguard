@@ -49,15 +49,9 @@ def route_claim(ctx: VerificationContext, all_chunks: list[Chunk]) -> Tier2Resul
     # distinguish "genuinely no match" (floor branch) from "small corpus IDF artefact".
     highest_score = max(raw_highest, 0.0)
 
-    # Determine whether there is ANY vocabulary overlap between claim and corpus.
-    # This guards against BM25Okapi producing 0 / negative scores in single-document corpora.
-    claim_token_set = set(claim_tokens)
-    corpus_token_set = {token for doc_tokens in tokenized_corpus for token in doc_tokens}
-    has_vocab_overlap = bool(claim_token_set & corpus_token_set)
-
     logger.debug(
-        "Tier 2 routing: raw_highest=%.4f, highest_score=%.4f, threshold=%.2f, floor=%.2f, overlap=%s",
-        raw_highest, highest_score, ctx.tier2_lexical_threshold, ctx.tier2_low_score_floor, has_vocab_overlap,
+        "Tier 2 routing: raw_highest=%.4f, highest_score=%.4f, threshold=%.2f, floor=%.2f",
+        raw_highest, highest_score, ctx.tier2_lexical_threshold, ctx.tier2_low_score_floor,
     )
 
     if highest_score >= ctx.tier2_lexical_threshold:
@@ -68,8 +62,10 @@ def route_claim(ctx: VerificationContext, all_chunks: list[Chunk]) -> Tier2Resul
             top_k_chunks=top_k,
             highest_score=highest_score,
         )
-    elif highest_score <= ctx.tier2_low_score_floor and not has_vocab_overlap:
+    elif highest_score <= ctx.tier2_low_score_floor and raw_highest >= 0.0:
         # Branch C: all scores near zero — escalate all chunks (capped, document order)
+        # raw_highest >= 0 guards against BM25Okapi IDF artefacts (negative scores in tiny
+        # corpora still indicate vocabulary overlap; those fall through to Branch B instead)
         ALL_LOW_MAX_CHUNKS = ctx.top_k_chunks * 3
         escalate_chunks = all_chunks[:ALL_LOW_MAX_CHUNKS]  # document order, not BM25 rank
         return Tier2Result(

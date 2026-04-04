@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from rank_bm25 import BM25Okapi  # noqa: F401
+
 if TYPE_CHECKING:
     from agentic_verifier.models.internal import VerificationContext
     from agentic_verifier.models.result import Source
@@ -71,8 +73,6 @@ def _sliding_window_chunks(source: Source, ctx: VerificationContext) -> list[Chu
 
     Uses whitespace tokenization for simplicity (compatible with BM25Okapi).
     """
-    from rank_bm25 import BM25Okapi  # noqa: F401 — import to confirm availability
-
     content = source.content
     # Simple whitespace tokenization — matches BM25Okapi's expected input
     words = content.split()
