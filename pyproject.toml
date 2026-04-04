@@ -40,6 +40,7 @@ markers = [
     "langchain: marks tests requiring optional langchain extras",
 ]
 addopts = "--cov=agentic_verifier --cov-report=term-missing"
+timeout = 300
 
 [tool.coverage.run]
 source = ["agentic_verifier"]
