@@ -7,10 +7,15 @@ import litellm
 
 from agentic_verifier._log import logger
 from agentic_verifier.core import classifier
-from agentic_verifier.exceptions import ParseError, VerificationFailedError
+from agentic_verifier.exceptions import (
+    ParseError,
+    VerificationCostExceededError,
+    VerificationFailedError,
+)
 from agentic_verifier.loaders import chunker
 from agentic_verifier.models.builder import ResultBuilder
 from agentic_verifier.models.internal import (
+    ClaimInput,
     RoutingDecision,
     SharedCostTracker,
     VerificationContext,
@@ -209,3 +214,109 @@ async def averify(
         ctx._boundary_id,
     )
     return result
+
+
+async def verify_batch_async(
+    inputs: list[ClaimInput],
+    model: str = "gpt-4o-mini",
+    max_concurrency: int = 5,
+    max_spend: float = 0.50,
+    **kwargs,
+) -> list[VerificationResult]:
+    """
+    Runs all inputs concurrently under a semaphore. Each input gets its own
+    fresh VerificationContext but all share one SharedCostTracker for global
+    budget enforcement across the batch.
+
+    On budget exhaustion: items that triggered VerificationCostExceededError
+    are returned as SKIPPED_DUE_TO_COST results rather than raising.
+    The batch always returns a result per input.
+
+    Constraint: max_spend cannot be passed via **kwargs — use the named parameter.
+    """
+    if "max_spend" in kwargs:
+        raise TypeError(
+            "max_spend cannot be passed as a **kwargs to verify_batch_async. "
+            "Use the max_spend parameter directly."
+        )
+
+    tracker = SharedCostTracker(max_spend=max_spend)
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def _sem_bounded_verify(inp: ClaimInput) -> VerificationResult:
+        async with semaphore:
+            return await averify(
+                claim=inp.claim,
+                sources=inp.sources,
+                model=inp.model or model,
+                agent_provided_evidence=inp.agent_provided_evidence,
+                cost_tracker=tracker,
+                **kwargs,
+            )
+
+    raw_results = await asyncio.gather(
+        *(_sem_bounded_verify(i) for i in inputs),
+        return_exceptions=True,
+    )
+
+    results: list[VerificationResult] = []
+    for r in raw_results:
+        if isinstance(r, VerificationCostExceededError):
+            results.append(VerificationResult(
+                is_valid=False,
+                overall_verdict="Verification skipped — batch spend cap exceeded.",
+                verification_method="skipped",
+                atomic_claims=[],
+                factual_consistency_score=0.0,
+                sources_used=[],
+                rationale=str(r),
+                offending_claim=None,
+                status="SKIPPED_DUE_TO_COST",
+                total_cost_usd=0.0,  # item was not billed; incremental cost is zero
+            ))
+        elif isinstance(r, Exception):
+            logger.error(
+                "verify_batch: item failed with %s — returning ERROR result",
+                type(r).__name__,
+            )
+            results.append(VerificationResult(
+                is_valid=False,
+                overall_verdict="Verification failed.",
+                verification_method="skipped",
+                atomic_claims=[],
+                factual_consistency_score=0.0,
+                sources_used=[],
+                rationale=str(r),
+                offending_claim=None,
+                status="ERROR",
+                total_cost_usd=0.0,  # item's incremental cost unknown on failure
+            ))
+        else:
+            results.append(r)
+
+    return results
+
+
+def verify_batch(
+    inputs: list[ClaimInput],
+    model: str = "gpt-4o-mini",
+    max_concurrency: int = 5,
+    max_spend: float = 0.50,
+    **kwargs,
+) -> list[VerificationResult]:
+    """
+    Sync wrapper around verify_batch_async. Creates a new event loop via asyncio.run().
+
+    Constraint: asyncio.run() cannot be called from within an already-running event
+    loop (e.g., Jupyter notebooks, FastAPI request handlers). In those contexts,
+    use verify_batch_async() directly with await.
+    """
+    return asyncio.run(
+        verify_batch_async(
+            inputs=inputs,
+            model=model,
+            max_concurrency=max_concurrency,
+            max_spend=max_spend,
+            **kwargs,
+        )
+    )
