@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 
 import litellm
+import pydantic
 
 from agentic_verifier._log import logger
 from agentic_verifier.core import classifier
@@ -320,3 +321,46 @@ def verify_batch(
             **kwargs,
         )
     )
+
+
+def dict_to_string_flattener(obj, prefix: str = "") -> str:
+    """
+    Recursively flattens nested dicts and lists into dot-notation key: value lines.
+
+    Examples:
+        {"revenue": "5M"}                          -> "revenue: 5M"
+        {"company": {"q3": {"revenue": "5M"}}}     -> "company.q3.revenue: 5M"
+        {"risks": ["regulatory", "market"]}        -> "risks[0]: regulatory\\nrisks[1]: market"
+        {"items": [{"name": "A"}, {"name": "B"}]}  -> "items[0].name: A\\nitems[1].name: B"
+    """
+    lines = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            full_key = f"{prefix}.{k}" if prefix else k
+            lines.append(dict_to_string_flattener(v, full_key))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            lines.append(dict_to_string_flattener(v, f"{prefix}[{i}]"))
+    else:
+        lines.append(f"{prefix}: {obj}")
+    return "\n".join(filter(None, lines))
+
+
+def verify_structured(
+    claim_dict: dict,
+    schema: type[pydantic.BaseModel],
+    sources: list,
+    **kwargs,
+) -> VerificationResult:
+    """
+    Validates claim_dict against the provided Pydantic schema, flattens it to a
+    string, then delegates to verify(). Raises ValueError on schema mismatch.
+    """
+    try:
+        validated = schema.model_validate(claim_dict)
+        normalised = validated.model_dump()
+    except pydantic.ValidationError as e:
+        raise ValueError(f"claim_dict does not conform to the provided schema: {e}")
+
+    flattened = dict_to_string_flattener(normalised)
+    return verify(claim=flattened, sources=sources, **kwargs)
