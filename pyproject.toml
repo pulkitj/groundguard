@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentic-verifier"
+version = "0.1.0"
+description = "LLM-agnostic deterministic assert layer for AI agent outputs"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "litellm>=1.0",
+    "pydantic>=2.0",
+    "rank-bm25>=0.2",
+    "numpy>=1.24",
+    "rapidfuzz>=3.0",
+]
+
+[project.optional-dependencies]
+loaders = [
+    "pypdf>=3.0",
+    "python-docx>=1.0",
+]
+langchain = [
+    "langchain-core>=0.1",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-mock>=3.10",
+    "pytest-cov>=4.0",
+    "pytest-timeout>=2.1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "llm: marks tests as real LLM integration tests (deselect with '-m not llm')",
+    "loaders: marks tests requiring optional loaders extras",
+    "langchain: marks tests requiring optional langchain extras",
+]
+addopts = "--cov=agentic_verifier --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["agentic_verifier"]
+omit = ["*/tests/*"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["agentic_verifier"]
