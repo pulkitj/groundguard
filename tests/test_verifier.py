@@ -301,3 +301,60 @@ async def test_averify_end_to_end_async_returns_verified(mocker):
     result = await averify(claim="Revenue was $5M.", sources=_sources())
 
     assert result.status == "VERIFIED"
+
+
+# ===========================================================================
+# T-30 — verify_structured: schema failure raises ValueError
+# ===========================================================================
+
+def test_verify_structured_schema_failure():
+    from pydantic import BaseModel
+    from agentic_verifier.core.verifier import verify_structured
+    from agentic_verifier.models.result import Source
+
+    class MySchema(BaseModel):
+        revenue: float  # expects a float
+
+    sources = [Source(content="Revenue was $5M.", source_id="doc.pdf")]
+    # Pass a string for a float field -> Pydantic ValidationError -> ValueError
+    with pytest.raises(ValueError):
+        verify_structured(
+            claim_dict={"revenue": "not-a-number"},
+            schema=MySchema,
+            sources=sources,
+        )
+
+
+# ===========================================================================
+# T-30 — verify_structured: schema success calls verify() with flattened string
+# ===========================================================================
+
+def test_verify_structured_schema_success(mocker):
+    from pydantic import BaseModel
+    from agentic_verifier.core.verifier import verify_structured
+    from agentic_verifier.models.result import Source
+
+    class RevenueSchema(BaseModel):
+        revenue: float
+        period: str
+
+    # Patch verify() itself to capture what flattened string it receives
+    mock_verify = mocker.patch(
+        "agentic_verifier.core.verifier.verify",
+        return_value=_verified_result(),
+    )
+
+    sources = [Source(content="Revenue was $5M.", source_id="doc.pdf")]
+    result = verify_structured(
+        claim_dict={"revenue": 5.0, "period": "Q3"},
+        schema=RevenueSchema,
+        sources=sources,
+    )
+
+    assert result.status == "VERIFIED"
+    # verify() must have been called with a flattened string (not the raw dict)
+    call_args = mock_verify.call_args
+    flattened_claim = call_args[1]["claim"] if "claim" in call_args[1] else call_args[0][0]
+    assert isinstance(flattened_claim, str)
+    assert "revenue" in flattened_claim
+    assert "period" in flattened_claim
