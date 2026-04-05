@@ -158,3 +158,55 @@ def test_evaluate_raises_parse_error_after_two_failures(mocker):
     ctx = _make_ctx()
     with pytest.raises(ParseError):
         evaluate(ctx, _make_chunks())
+
+
+# ---------------------------------------------------------------------------
+# Open Issue #1 — evaluate_async() 0% test coverage
+# ---------------------------------------------------------------------------
+
+async def test_evaluate_async_returns_tier3_response_model(mocker):
+    """Open Issue #1: evaluate_async() async path returns a valid Tier3ResponseModel."""
+    from unittest.mock import AsyncMock, MagicMock
+    from agentic_verifier.tiers.tier3_evaluation import evaluate_async
+
+    valid_model = _valid_t3_model()
+
+    mock_resp = MagicMock()
+    mock_resp.choices[0].message.parsed = valid_model
+
+    mocker.patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp)
+    mocker.patch("litellm.completion_cost", return_value=0.001)
+
+    ctx = _make_ctx()
+    result = await evaluate_async(ctx, _make_chunks())
+
+    assert isinstance(result, Tier3ResponseModel)
+    assert result.textual_entailment.label == "Entailment"
+
+
+async def test_evaluate_async_retries_once_on_validation_error(mocker):
+    """Open Issue #1b: evaluate_async() retries once on parse failure, then returns valid model."""
+    from unittest.mock import AsyncMock, MagicMock
+    from agentic_verifier.tiers.tier3_evaluation import evaluate_async
+
+    valid_model = _valid_t3_model()
+    call_count = [0]
+
+    async def mock_acompletion(**kwargs):
+        call_count[0] += 1
+        mock_resp = MagicMock()
+        mock_resp.choices[0].message.parsed = None
+        if call_count[0] == 1:
+            mock_resp.choices[0].message.content = '{"invalid": "missing_fields"}'
+        else:
+            mock_resp.choices[0].message.parsed = valid_model
+        return mock_resp
+
+    mocker.patch("litellm.acompletion", side_effect=mock_acompletion)
+    mocker.patch("litellm.completion_cost", return_value=0.001)
+
+    ctx = _make_ctx()
+    result = await evaluate_async(ctx, _make_chunks())
+
+    assert call_count[0] == 2
+    assert isinstance(result, Tier3ResponseModel)

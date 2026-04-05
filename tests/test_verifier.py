@@ -304,6 +304,71 @@ async def test_averify_end_to_end_async_returns_verified(mocker):
 
 
 # ===========================================================================
+# T-52 — Empty / missing data guards raise ValueError
+# ===========================================================================
+
+def test_verify_empty_claim_raises_value_error():
+    """T-52a: verify(claim='', sources=[...]) raises ValueError before pipeline runs."""
+    from agentic_verifier.core.verifier import verify
+    with pytest.raises(ValueError):
+        verify(claim="", sources=_sources())
+
+
+def test_verify_none_claim_raises_value_error():
+    """T-52b: verify(claim=None, sources=[...]) raises ValueError."""
+    from agentic_verifier.core.verifier import verify
+    with pytest.raises(ValueError):
+        verify(claim=None, sources=_sources())  # type: ignore[arg-type]
+
+
+def test_verify_empty_sources_raises_value_error():
+    """T-52c: verify(claim='valid', sources=[]) raises ValueError."""
+    from agentic_verifier.core.verifier import verify
+    with pytest.raises(ValueError):
+        verify(claim="Revenue was $5M.", sources=[])
+
+
+# ===========================================================================
+# T-53 — Tiny budget: single-item batch returns SKIPPED_DUE_TO_COST
+# ===========================================================================
+
+async def test_tiny_budget_single_item_batch_returns_skipped_due_to_cost(mocker):
+    """T-53: max_spend=0.000001 with LLM path → status='SKIPPED_DUE_TO_COST', no network call.
+
+    verify() is fail-loud (VerificationCostExceededError propagates).
+    verify_batch_async absorbs it → SKIPPED_DUE_TO_COST. Test via 1-item batch.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+    from agentic_verifier.core.verifier import verify_batch_async
+    from agentic_verifier.exceptions import VerificationCostExceededError
+    from agentic_verifier.models.internal import ClaimInput, VerificationContext
+
+    mocker.patch("agentic_verifier.core.verifier.classifier.parse_and_classify", return_value=[])
+    mocker.patch("agentic_verifier.core.verifier.chunker.chunk_sources", return_value=_chunks())
+    mocker.patch("agentic_verifier.core.verifier.tier1_authenticity.check_fuzzy", return_value=None)
+
+    mock_loop = MagicMock()
+    mock_loop.run_in_executor = AsyncMock(return_value=_escalate_t2())
+    mocker.patch("agentic_verifier.core.verifier.asyncio.get_running_loop", return_value=mock_loop)
+
+    async def _raise_cost_exceeded(ctx: VerificationContext, _chunks):
+        ctx.cost_tracker.add_cost(1.0)  # always blows the cap
+        return _valid_t3()
+
+    mocker.patch(
+        "agentic_verifier.core.verifier.tier3_evaluation.evaluate_async",
+        side_effect=_raise_cost_exceeded,
+    )
+
+    inputs = [ClaimInput(claim="Revenue was $5M.", sources=_sources())]
+    results = await verify_batch_async(inputs=inputs, max_spend=0.000001)
+
+    assert len(results) == 1
+    assert results[0].status == "SKIPPED_DUE_TO_COST"
+    assert results[0].total_cost_usd == 0.0
+
+
+# ===========================================================================
 # T-30 — verify_structured: schema failure raises ValueError
 # ===========================================================================
 

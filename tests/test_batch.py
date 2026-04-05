@@ -519,3 +519,75 @@ async def test_verify_batch_async_empty_inputs_returns_empty_list(mocker):
 
     results = await verify_batch_async(inputs=[], model="gpt-4o-mini", max_spend=1.0)
     assert results == []
+
+
+# ---------------------------------------------------------------------------
+# T-54 — Mid-batch cost exhaustion: first 2 items succeed, last 3 skipped
+# ---------------------------------------------------------------------------
+
+async def test_mid_batch_cost_exhaustion(mocker):
+    """T-54: max_spend sized so first ~2 items exhaust budget; remaining return SKIPPED_DUE_TO_COST."""
+    from agentic_verifier.core.verifier import verify_batch_async
+    from agentic_verifier.loaders.chunker import Chunk
+
+    mocker.patch(
+        "agentic_verifier.core.verifier.classifier.parse_and_classify",
+        return_value=[],
+    )
+    mocker.patch(
+        "agentic_verifier.core.verifier.chunker.chunk_sources",
+        return_value=[
+            Chunk(parent_source_id="doc.pdf", text_content="Revenue was $5M.", char_start=0, char_end=16)
+        ],
+    )
+
+    mock_loop = MagicMock()
+    mock_loop.run_in_executor = AsyncMock(return_value=_t2_escalate())
+    mocker.patch(
+        "agentic_verifier.core.verifier.asyncio.get_running_loop",
+        return_value=mock_loop,
+    )
+
+    call_count = 0
+
+    async def _evaluate_with_cost(ctx: VerificationContext, _chunks):
+        nonlocal call_count
+        call_count += 1
+        ctx.cost_tracker.add_cost(0.15)  # 2 calls × $0.15 = $0.30 > $0.25 cap
+        return _valid_t3()
+
+    mocker.patch(
+        "agentic_verifier.core.verifier.tier3_evaluation.evaluate_async",
+        side_effect=_evaluate_with_cost,
+    )
+    mocker.patch(
+        "agentic_verifier.core.verifier.ResultBuilder.build_llm_result",
+        return_value=VerificationResult(
+            is_valid=True,
+            overall_verdict="Verified.",
+            verification_method="tier3_llm",
+            atomic_claims=[],
+            factual_consistency_score=0.90,
+            sources_used=["doc.pdf"],
+            rationale=".",
+            offending_claim=None,
+            status="VERIFIED",
+            total_cost_usd=0.15,
+        ),
+    )
+
+    inputs = [_make_claim_input(f"Claim {i}") for i in range(5)]
+    # max_spend=0.25 → allows ~1 real call at $0.15 each before cap
+    results = await verify_batch_async(inputs=inputs, max_spend=0.25, max_concurrency=1)
+
+    assert len(results) == 5
+    statuses = [r.status for r in results]
+
+    # Must not raise — fail-contained
+    assert all(s in {"VERIFIED", "SKIPPED_DUE_TO_COST", "ERROR", "PARSE_ERROR"} for s in statuses)
+    # At least some items must be skipped
+    assert "SKIPPED_DUE_TO_COST" in statuses, f"Expected skipped items, got: {statuses}"
+    # Batch call must not raise
+    skipped = statuses.count("SKIPPED_DUE_TO_COST")
+    verified = statuses.count("VERIFIED")
+    assert verified + skipped == 5, f"Unexpected statuses: {statuses}"

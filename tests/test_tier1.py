@@ -70,3 +70,14 @@ def test_error_message_contains_score_and_threshold():
     chunks = _make_chunks("The contract was signed on March 1st.")
     with pytest.raises(HallucinatedEvidenceError, match=r"similarity"):
         check_fuzzy(evidence, chunks, min_similarity=0.90)
+
+
+# ---------------------------------------------------------------------------
+# Open Issue #3 — check_fuzzy() with empty chunks list
+# ---------------------------------------------------------------------------
+
+def test_check_fuzzy_with_empty_chunks_raises_hallucinated_evidence_error():
+    """Open Issue #3: check_fuzzy(evidence, [], ...) raises HallucinatedEvidenceError (score=0, no match)."""
+    evidence = "Revenue was $5M."
+    with pytest.raises(HallucinatedEvidenceError):
+        check_fuzzy(evidence, [], min_similarity=0.90)

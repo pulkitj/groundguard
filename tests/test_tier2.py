@@ -100,3 +100,25 @@ def test_result_contains_highest_score():
     chunks = [Chunk(parent_source_id="s1", text_content="apple banana cherry", char_start=0, char_end=19)]
     result = route_claim(ctx, chunks)
     assert result.highest_score >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# Open Issue #2 — Branch C with vocabulary overlap but score <= 0.01
+# ---------------------------------------------------------------------------
+
+def test_branch_c_vocabulary_overlap_low_score(mocker):
+    """Open Issue #2: claim words appear in chunks but BM25 score is still <= 0.01 → ESCALATE_ALL_LOW_SCORE."""
+    from rank_bm25 import BM25Okapi
+    import numpy as np
+    from agentic_verifier.models.internal import RoutingDecision
+
+    chunks = _make_chunks(5, text="revenue profit loss income")  # some real chunks
+
+    # Mock BM25Okapi.get_scores to return a small positive score (vocabulary overlap, low score)
+    mocker.patch.object(BM25Okapi, "get_scores", return_value=np.array([0.005] * 5))
+
+    ctx = _make_ctx()
+    result = route_claim(ctx, chunks)
+
+    assert result.decision == RoutingDecision.ESCALATE_ALL_LOW_SCORE
+    assert result.highest_score == pytest.approx(0.005)

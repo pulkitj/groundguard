@@ -54,3 +54,15 @@ def test_empty_string_does_not_raise():
     """Empty string should return empty list or single empty atom without raising."""
     result = parse_and_classify("")
     assert isinstance(result, list)
+
+
+# ---------------------------------------------------------------------------
+# Open Issue #5 — classifier line 36: return [] after empty split
+# ---------------------------------------------------------------------------
+
+def test_punctuation_delimiter_only_returns_empty_list():
+    """Open Issue #5: claim that survives strip but produces no sentences after split returns []."""
+    # ". " passes claim.strip() check ("." is truthy), but the regex splits on ". "
+    # producing only empty strings -> sentences = [] -> line 36 return []
+    atoms = parse_and_classify(". ")
+    assert atoms == []

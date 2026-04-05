@@ -144,3 +144,28 @@ def test_build_llm_result_transplants_page_hint():
     ])
     result = ResultBuilder.build_llm_result(ctx, t3, "tier3_llm")
     assert result.atomic_claims[0].page_hint == "pg:3"
+
+
+# ---------------------------------------------------------------------------
+# Open Issue #4 — build_lexical_pass() with empty matched_chunks
+# ---------------------------------------------------------------------------
+
+def test_build_lexical_pass_empty_matched_chunks():
+    """Open Issue #4: build_lexical_pass([]) returns valid result with sources_used=[] and source_id=None."""
+    from agentic_verifier.models.builder import ResultBuilder
+    from agentic_verifier.models.internal import VerificationContext
+    from agentic_verifier.models.result import Source
+
+    ctx = VerificationContext(
+        claim="Revenue was $5M.",
+        original_sources=[Source(content="Revenue was $5M.", source_id="doc.pdf")],
+        model="gpt-4o-mini",
+    )
+    result = ResultBuilder.build_lexical_pass(ctx, matched_chunks=[])
+
+    assert result.sources_used == []
+    assert result.status == "VERIFIED"
+    assert result.verification_method == "tier2_lexical"
+    assert result.factual_consistency_score == 1.0
+    assert len(result.atomic_claims) == 1
+    assert result.atomic_claims[0].source_id is None
