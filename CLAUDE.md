@@ -36,14 +36,15 @@ pytest -m "not llm and not loaders and not langchain" --cov=agentic_verifier --c
 
 ## Build Status (Session 6 — 2026-04-05)
 
-**All phases 0–15 complete. 90 fast tests passing. Real Suite debugging in progress.**
+**All phases 0–15 complete. 90 fast tests passing. Real Suite 18/18 green. Phase 16 (multi-model compatibility) planned — T-60 to T-65.**
 
 Last commit: `25b2e3a` (README + final progress.json)
 
 | Phase | Content | Status |
 |---|---|---|
 | 0–15 | All phases | ✅ Done |
-| Real Suite | `tests/integration/test_real_suite.py` — 18 fixtures | ⚠️ In progress — see below |
+| Real Suite | `tests/integration/test_real_suite.py` — 18 fixtures | ✅ 18/18 PASS against `ollama/qwen3:30b` |
+| Phase 16 | Multi-model compatibility — adapters registry, test gaps, fixture scaffold | 📋 Planned (T-60 to T-65) |
 
 ### Real Suite Status (Session 6 — COMPLETE)
 
@@ -51,13 +52,13 @@ Last commit: `25b2e3a` (README + final progress.json)
 
 Four bugs were found and fixed during first execution:
 
-1. **litellm 1.83.2 drops Ollama content when thinking mode is active** — fixed in `tier3_evaluation.py` via `_extra_kwargs()` returning `{"think": False}` for all `ollama/` models.
+1. **litellm 1.83.2 drops Ollama content when thinking mode is active** — fixed via `_extra_kwargs()` returning `{"think": False}` for all `ollama/` models. **Note:** Phase 16 (T-62) will replace this with a proper `OLLAMA_ADAPTER` that strips `<think>` tags instead of disabling reasoning.
 
 2. **BM25 IDF negative for single-source corpus** — `SKIP_LLM_HIGH_CONFIDENCE` never fires with N=1 source. Fixed in `test_fixture_a_perfect_match` by adding 4 noise sources.
 
 3. **Fixture I assertion too strict** — claim uses "likely" (hedged language); qwen3 legitimately returns UNVERIFIABLE. Relaxed to `VERIFIED or UNVERIFIABLE`.
 
-4. **Fixture M timeout + asyncio.run() on Windows** — converted to `async def`, reduced batch from 10 to 5 items. Fixture P `sources_used` assertion removed (qwen3 occasionally misattributes cross-source additions).
+4. **Fixture M timeout + asyncio.run() on Windows** — converted to `async def`, reduced batch from 10 to 5 items. Fixture P `sources_used` assertion removed (qwen3 occasionally misattributes cross-source additions — T-64 will restore it with a soft contract).
 
 Run command:
 
@@ -131,6 +132,7 @@ verify(claim, sources)
     │           → Tier2Result               BM25Okapi — 3 routing branches (see below)
     │
     └── Tier 3  tiers/tier3_evaluation.py   evaluate(ctx, chunks)
+                → adapters/registry.py      get_adapter(model) → pre_call_kwargs + post_process
                 → Tier3ResponseModel        litellm.completion, 2-attempt retry
                 → ResultBuilder             → VerificationResult (public output)
 ```
@@ -197,10 +199,13 @@ Chunker (loaders/chunker.py):    Chunk  ← defined here, not in models/
 
 ## Known Open Issues
 
-All 5 session-5 code review gaps are resolved. Current open items from Real Suite execution:
+All 5 session-5 code review gaps are resolved. All Real Suite fixtures pass. Phase 16 tracks the remaining work:
 
-1. **`tiers/tier3_evaluation.py`** — `_extra_kwargs()` only covers `ollama/` prefix; other thinking-mode prefixes (e.g. `ollama_chat/`) not handled.
-2. **`tests/integration/`** — Real Suite needs one full clean run with session-6 fixes to confirm green.
+1. **`tiers/tier3_evaluation.py`** — `_extra_kwargs()` only covers `ollama/` prefix; `ollama_chat/` and other thinking-mode providers not handled. **Fix:** T-62 replaces `_extra_kwargs()` with `ModelAdapter` registry.
+2. **`tiers/tier3_evaluation.py`** — `think=False` disables chain-of-thought reasoning on Ollama models, reducing accuracy on inferential claims. **Fix:** T-62 removes `think=False`; OLLAMA_ADAPTER strips `<think>` tags instead.
+3. **No formal multi-model compatibility layer** — OpenAI reasoning models (`o3`, `gpt-5*`) raise API errors if `temperature` is passed. Anthropic adaptive thinking makes `message.parsed` unreliable. Google Gemini can return `None` content silently. **Fix:** T-61 creates `adapters/registry.py`.
+4. **Fast suite coverage gaps** — `parse_response()` with `<think>` tags, `None` content, `choices=[]` error, `auto_chunk=False`, `verify_structured()` both paths are untested. **Fix:** T-63.
+5. **Integration test contracts** — Some fixtures use qwen3-specific relaxations that mask failures on other models. Some contracts too strict (T-36, T-43) or too loose (T-38, T-49). **Fix:** T-64.
 
 ---
 
@@ -218,6 +223,9 @@ tests/
 ├── test_tier2.py           # Phase 6 — BM25 routing branches, Branch C cap
 ├── test_evaluation.py      # Phase 7 — render_prompt, parse_response, retry loop
 ├── test_builder.py         # Phase 8 — score division, Neutral mapping, page_hint
+├── test_adapters.py        # Phase 16 (T-60) — adapter prefix routing, post_process, pre_call_kwargs
+├── fixtures/               # Phase 16 (T-65) — sample.pdf, sample.docx (generated, gitignored)
+│   └── scaffold_fixtures.py  # Run once to generate fixture files
 └── integration/            # Phase 12+ — @pytest.mark.llm (requires real API keys)
 ```
 
@@ -238,8 +246,10 @@ ollama serve             # starts on http://localhost:11434
 result = verify(claim="...", sources=[...], model="ollama/qwen3:14b", max_spend=0.0)
 ```
 
-**qwen3 thinking mode** — qwen3 models emit a `thinking` field alongside `content`. litellm 1.83.2 drops `content` when `thinking` is present. `_extra_kwargs()` in `tier3_evaluation.py` passes `think=False` automatically for all `ollama/` models, disabling thinking mode and restoring normal content output.
+**Ollama thinking mode (post Phase 16)** — Thinking-capable Ollama models (qwen3, DeepSeek-R1, Gemma 4, Kimi K2, LFM2.5, GPT-OSS, etc.) emit `<think>...</think>` tags or drop `content` when thinking is active. After T-62 lands, `OLLAMA_ADAPTER` handles this automatically: strips `<think>` tags, falls back to `reasoning_content` if content is empty. Models reason freely — no `think=False` bypass.
 
-Ollama now supports `response_format` (structured output via JSON schema grammar). `parse_response()` uses the fence-stripping + `<think>` tag stripping fallback for any remaining edge cases.
+**Current state (pre-Phase 16)** — `_extra_kwargs()` passes `think=False` for `ollama/` models as a temporary fix. This disables chain-of-thought reasoning. T-62 removes this.
+
+Ollama supports `response_format` (structured output via JSON schema grammar). `parse_response()` uses the fence-stripping + `<think>` tag stripping fallback for any remaining edge cases.
 
 For the Real Suite integration tests, use `--timeout=300` (qwen3:30b takes 30–90s per call).
