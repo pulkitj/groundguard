@@ -73,6 +73,7 @@ Generate a JSON object with a five-part analysis:
 """
 
 _MD_FENCE_RE = _re.compile(r'^\s*```(?:json)?\s*\n?(.*?)\n?\s*```\s*$', _re.DOTALL)
+_THINK_TAG_RE = _re.compile(r'<think>.*?</think>', _re.DOTALL | _re.IGNORECASE)
 
 
 def render_prompt(ctx: VerificationContext, chunks: list[Chunk]) -> str:
@@ -110,11 +111,25 @@ def parse_response(response) -> Tier3ResponseModel:
         return parsed
 
     raw_content = response.choices[0].message.content
+    # Strip chain-of-thought think tags (Qwen3 and similar models emit these before JSON)
+    raw_content = _THINK_TAG_RE.sub('', raw_content).strip()
     fence_match = _MD_FENCE_RE.match(raw_content)
     if fence_match:
         raw_content = fence_match.group(1)
 
     return Tier3ResponseModel.model_validate_json(raw_content)
+
+
+def _extra_kwargs(model: str) -> dict:
+    """Return provider-specific extra kwargs for litellm.completion.
+
+    qwen3 on Ollama emits a `thinking` field alongside `content`. litellm 1.83.2 drops
+    the content when the thinking field is present (bug). Passing think=False disables
+    qwen3's chain-of-thought mode so litellm receives a plain content response.
+    """
+    if model.startswith("ollama/"):
+        return {"think": False}
+    return {}
 
 
 def evaluate(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3ResponseModel:
@@ -125,6 +140,7 @@ def evaluate(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3ResponseMode
     temperature = 0.0
     error_suffix = ""
     prompt = render_prompt(ctx, chunks)
+    extra = _extra_kwargs(ctx.model)
 
     for attempt in range(2):
         messages = [{"role": "user", "content": prompt + error_suffix}]
@@ -134,6 +150,7 @@ def evaluate(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3ResponseMode
             messages=messages,
             response_format=Tier3ResponseModel,
             temperature=temperature,
+            **extra,
         )
         cost = litellm.completion_cost(completion_response=response)
         ctx.cost_tracker.add_cost(cost)
@@ -164,6 +181,7 @@ async def evaluate_async(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3
     temperature = 0.0
     error_suffix = ""
     prompt = render_prompt(ctx, chunks)
+    extra = _extra_kwargs(ctx.model)
 
     for attempt in range(2):
         messages = [{"role": "user", "content": prompt + error_suffix}]
@@ -173,6 +191,7 @@ async def evaluate_async(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3
             messages=messages,
             response_format=Tier3ResponseModel,
             temperature=temperature,
+            **extra,
         )
         cost = litellm.completion_cost(completion_response=response)
         ctx.cost_tracker.add_cost(cost)
