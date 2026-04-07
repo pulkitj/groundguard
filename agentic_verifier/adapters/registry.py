@@ -1,0 +1,193 @@
+"""Model adapter registry — provider-specific pre/post-processing for litellm calls."""
+from __future__ import annotations
+import re
+from dataclasses import dataclass
+from typing import Any, Callable
+
+from agentic_verifier.exceptions import VerificationFailedError
+
+_THINK_TAG_RE = re.compile(r'<think>.*?</think>', re.DOTALL | re.IGNORECASE)
+_MD_FENCE_RE = re.compile(r'^\s*```(?:json)?\s*\n?(.*?)\n?\s*```\s*$', re.DOTALL)
+
+
+def _strip_fences(content: str) -> str:
+    """Strip markdown code fences and surrounding whitespace."""
+    m = _MD_FENCE_RE.match(content)
+    return m.group(1).strip() if m else content.strip()
+
+
+def _strip_think_tags(content: str) -> str:
+    """
+    Strip chain-of-thought <think> blocks from Ollama thinking-capable models.
+
+    Uses rfind('</think>') split rather than regex-only, because quantized/local
+    LLMs frequently hallucinate malformed closing tags (</thinking>, <\\think>, or
+    omit the closing tag entirely). rfind on the last occurrence is resilient to
+    all of these — it discards everything up to and including the last </think>
+    variant if present, then falls through to regex for well-formed tags.
+
+    Edge case — max_tokens exhaustion mid-thought: if the model emits <think> but
+    hits the token limit before writing </think>, there is no closing tag. In this
+    case rfind returns -1 AND the regex matches nothing, so stripped == content.
+    Detecting a leading <think> opener here returns "" to signal "no usable JSON".
+    """
+    lower = content.lower()
+    # Find the last occurrence of any </think...> closing tag variant
+    think_end = lower.rfind('</think')
+    if think_end != -1:
+        # Advance past the tag's closing >
+        close_bracket = content.find('>', think_end)
+        if close_bracket != -1:
+            return content[close_bracket + 1:].strip()
+    # Fallback: regex for well-formed <think>...</think> blocks
+    stripped = _THINK_TAG_RE.sub('', content).strip()
+    # If regex changed nothing and content opens with <think>, the model hit
+    # max_tokens mid-thought — entire content is reasoning, no JSON present.
+    if stripped == content.strip() and lower.lstrip().startswith('<think'):
+        return ""
+    return stripped
+
+
+@dataclass
+class ModelAdapter:
+    """
+    Protocol for provider-specific LLM quirk handling.
+
+    build_kwargs(base_kwargs: dict) -> dict
+        Takes the base litellm.completion() kwargs dict and returns the final kwargs dict.
+        Adapter is free to add, remove, or modify any key (e.g. OPENAI_REASONING_ADAPTER
+        pops 'temperature' to avoid API errors on o1/o3/o4/gpt-5 models).
+        Default: return base_kwargs unchanged.
+
+    post_process(response, model) -> str
+        Extract normalized content string from a raw LiteLLM response object.
+        Raises VerificationFailedError on unrecoverable content.
+        Content returned here is fed directly into Tier3ResponseModel.model_validate_json().
+    """
+    name: str
+    build_kwargs: Callable[[dict], dict]
+    post_process: Callable[[Any, str], str]
+
+
+# ---------------------------------------------------------------------------
+# DEFAULT_ADAPTER — used for all unrecognized models
+# ---------------------------------------------------------------------------
+def _default_post_process(response: Any, model: str = "") -> str:
+    content = response.choices[0].message.content or ""
+    return _strip_fences(content)
+
+
+DEFAULT_ADAPTER = ModelAdapter(
+    name="default",
+    build_kwargs=lambda base: base,
+    post_process=_default_post_process,
+)
+
+
+# ---------------------------------------------------------------------------
+# OLLAMA_ADAPTER — ollama/ and ollama_chat/ prefixes
+# ---------------------------------------------------------------------------
+def _ollama_post_process(response: Any, model: str = "") -> str:
+    msg = response.choices[0].message
+    content = msg.content
+    if content:
+        content = _strip_think_tags(content)
+    if not content:
+        # litellm 1.83.2 drops content when thinking field is present — try reasoning_content
+        fallback = getattr(msg, 'reasoning_content', None) or ""
+        fallback = fallback.strip()
+        if fallback.startswith('{'):
+            content = fallback
+        else:
+            raise VerificationFailedError(
+                "Ollama returned empty content and reasoning_content does not contain JSON. "
+                "The model may have failed to generate structured output."
+            )
+    return _strip_fences(content)
+
+
+OLLAMA_ADAPTER = ModelAdapter(
+    name="ollama",
+    build_kwargs=lambda base: base,
+    post_process=_ollama_post_process,
+)
+
+
+# ---------------------------------------------------------------------------
+# OPENAI_REASONING_ADAPTER — o1, o3, o4, gpt-5 series
+# ---------------------------------------------------------------------------
+def _openai_reasoning_build_kwargs(base: dict) -> dict:
+    base.pop("temperature", None)
+    return base
+
+
+OPENAI_REASONING_ADAPTER = ModelAdapter(
+    name="openai_reasoning",
+    build_kwargs=_openai_reasoning_build_kwargs,
+    post_process=_default_post_process,
+)
+
+
+# ---------------------------------------------------------------------------
+# ANTHROPIC_ADAPTER — anthropic/ prefix and claude- prefix models
+# ---------------------------------------------------------------------------
+def _anthropic_post_process(response: Any, model: str = "") -> str:
+    content = response.choices[0].message.content or ""
+    # Never use message.parsed — force raw content path to avoid litellm #20533
+    return _strip_fences(content)
+
+
+ANTHROPIC_ADAPTER = ModelAdapter(
+    name="anthropic",
+    build_kwargs=lambda base: base,
+    post_process=_anthropic_post_process,
+)
+
+
+# ---------------------------------------------------------------------------
+# GOOGLE_ADAPTER — gemini/ and vertex_ai/gemini prefixes
+# ---------------------------------------------------------------------------
+def _google_post_process(response: Any, model: str = "") -> str:
+    content = response.choices[0].message.content
+    if not content:
+        raise VerificationFailedError(
+            "Gemini returned empty content — safety filter may have blocked this response."
+        )
+    return _strip_fences(content)
+
+
+GOOGLE_ADAPTER = ModelAdapter(
+    name="google",
+    build_kwargs=lambda base: base,
+    post_process=_google_post_process,
+)
+
+
+# ---------------------------------------------------------------------------
+# Registry & Lookup — ordered most-specific to least-specific prefix
+# ---------------------------------------------------------------------------
+_REGISTRY: list[tuple[str, ModelAdapter]] = [
+    ("ollama_chat/", OLLAMA_ADAPTER),
+    ("ollama/", OLLAMA_ADAPTER),
+    ("vertex_ai/gemini", GOOGLE_ADAPTER),
+    ("gemini/", GOOGLE_ADAPTER),
+    ("anthropic/", ANTHROPIC_ADAPTER),
+    ("claude-", ANTHROPIC_ADAPTER),
+    ("o1", OPENAI_REASONING_ADAPTER),
+    ("o3", OPENAI_REASONING_ADAPTER),
+    ("o4", OPENAI_REASONING_ADAPTER),
+    ("gpt-5", OPENAI_REASONING_ADAPTER),
+]
+
+
+def get_adapter(model: str) -> ModelAdapter:
+    """
+    Longest-prefix match against _REGISTRY. Returns DEFAULT_ADAPTER for unrecognized models.
+
+    The registry is ordered by prefix length (longest first) to ensure that
+    'ollama_chat/' matches before 'ollama/' for models like 'ollama_chat/deepseek-r1'.
+    """
+    for prefix, adapter in _REGISTRY:
+        if model.startswith(prefix):
+            return adapter
+    return DEFAULT_ADAPTER
