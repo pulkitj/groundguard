@@ -47,3 +47,44 @@ def _patch_litellm_exceptions(monkeypatch):
     monkeypatch.setattr(litellm.exceptions, "APIConnectionError", _EasyAPIConnectionError)
     monkeypatch.setattr(litellm, "APIConnectionError", _EasyAPIConnectionError, raising=False)
     yield
+
+
+# ---------------------------------------------------------------------------
+# Loader fixtures — generates sample.pdf and sample.docx on-demand
+# ---------------------------------------------------------------------------
+
+import pathlib
+
+FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture(scope="session", autouse=False)
+def loader_fixtures():
+    """
+    Generate sample.pdf and sample.docx in tests/fixtures/ for loaders tests.
+    Generated on first run; skipped on subsequent runs if files already exist.
+    Requires [loaders] extras: fpdf2 and python-docx.
+    """
+    FIXTURES_DIR.mkdir(exist_ok=True)
+    pdf_path = FIXTURES_DIR / "sample.pdf"
+    docx_path = FIXTURES_DIR / "sample.docx"
+
+    if not pdf_path.exists():
+        try:
+            from fpdf import FPDF
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+            pdf.cell(200, 10, txt="Sample fixture content for agentic-verifier loaders tests.")
+            pdf.output(str(pdf_path))
+        except ImportError:
+            pytest.skip("fpdf2 not installed — run: pip install fpdf2")
+
+    if not docx_path.exists():
+        try:
+            from docx import Document
+            doc = Document()
+            doc.add_paragraph("Sample fixture content for agentic-verifier loaders tests.")
+            doc.save(str(docx_path))
+        except ImportError:
+            pytest.skip("python-docx not installed — run: pip install python-docx")
