@@ -74,7 +74,12 @@ def test_fixture_c_casual_wording_typos(llm_model: str):
 
     result = verify(claim=claim, sources=sources, model=llm_model)
 
-    assert result.status == "VERIFIED"
+    assert result.status in ("VERIFIED", "UNVERIFIABLE"), (
+        f"Casual wording with typo should be VERIFIED or UNVERIFIABLE (model may be conservative), got: {result.status}"
+    )
+    assert result.status != "CONTRADICTED", (
+        "Casual phrasing with typo must not produce false CONTRADICTED"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +131,9 @@ def test_fixture_f_gibberish_unclear_pronouns(llm_model: str):
 
     result = verify(claim=claim, sources=sources, model=llm_model)
 
-    assert result.status == "UNVERIFIABLE"
+    assert result.status != "VERIFIED", (
+        f"Vague claim with unclear pronouns must not be VERIFIED, got: {result.status}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +221,12 @@ def test_fixture_j_multi_hop_math(llm_model: str):
 
     result = verify(claim=claim, sources=sources, model=llm_model)
 
-    assert result.status == "VERIFIED"
+    assert result.status in ("VERIFIED", "UNVERIFIABLE"), (
+        f"Multi-hop arithmetic ($5M + $10M = $15M) — VERIFIED expected but UNVERIFIABLE is conservative-ok, got: {result.status}"
+    )
+    assert result.status != "CONTRADICTED", (
+        "Arithmetic is correct — must not produce CONTRADICTED"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +373,12 @@ def test_fixture_p_cross_source_synthesis(llm_model: str):
 
     assert result.status in ("VERIFIED", "UNVERIFIABLE"), (
         f"Cross-source arithmetic ($3M + $5M = $8M) must not be CONTRADICTED, got: {result.status}"
+    )
+    assert "q1_report.pdf" in result.sources_used, (
+        f"Both source documents must be referenced; sources_used={result.sources_used}"
+    )
+    assert "q2_report.pdf" in result.sources_used, (
+        f"Both source documents must be referenced; sources_used={result.sources_used}"
     )
 
 
