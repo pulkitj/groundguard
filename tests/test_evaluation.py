@@ -266,3 +266,37 @@ def test_parse_response_choices_empty_raises_descriptively(mocker):
     # choices=[] causes IndexError in the adapter, caught by retry loop → ParseError after 2 attempts
     with pytest.raises(ParseError):
         evaluate(ctx, _make_chunks())
+
+
+# ---------------------------------------------------------------------------
+# T-66 — exponential backoff for transient LiteLLM errors
+# ---------------------------------------------------------------------------
+
+async def test_evaluate_async_retries_on_transient_error(mocker):
+    """T-66: evaluate_async retries transient errors with exponential backoff."""
+    from unittest.mock import AsyncMock, MagicMock
+    import litellm
+    from agentic_verifier.tiers.tier3_evaluation import evaluate_async
+
+    valid_model = _valid_t3_model()
+    call_count = [0]
+
+    async def mock_acompletion(**kwargs):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise litellm.ServiceUnavailableError(
+                message="Service unavailable", llm_provider="test", model="test"
+            )
+        mock_resp = MagicMock()
+        mock_resp.choices[0].message.parsed = valid_model
+        return mock_resp
+
+    mocker.patch("litellm.acompletion", side_effect=mock_acompletion)
+    mocker.patch("litellm.completion_cost", return_value=0.001)
+    mocker.patch("asyncio.sleep", new_callable=AsyncMock)  # skip actual sleep
+
+    ctx = _make_ctx()
+    result = await evaluate_async(ctx, _make_chunks())
+
+    assert call_count[0] == 2  # first call failed, second succeeded
+    assert isinstance(result, Tier3ResponseModel)

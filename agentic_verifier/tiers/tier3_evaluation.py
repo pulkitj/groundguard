@@ -1,8 +1,10 @@
 """Tier 3 LLM evaluation — prompt engine and evaluation entry points."""
 from __future__ import annotations
+import asyncio
 import json
 import pydantic
-from typing import TYPE_CHECKING
+import time
+from typing import TYPE_CHECKING, Any
 
 import litellm
 
@@ -14,6 +16,13 @@ from agentic_verifier.adapters.registry import get_adapter
 if TYPE_CHECKING:
     from agentic_verifier.models.internal import VerificationContext
     from agentic_verifier.loaders.chunker import Chunk
+
+
+TRANSIENT_LITELLM_ERRORS = (
+    litellm.ServiceUnavailableError,
+    litellm.RateLimitError,
+    litellm.exceptions.APIConnectionError,
+)
 
 
 TIER3_PROMPT_TEMPLATE = """\
@@ -71,6 +80,40 @@ Generate a JSON object with a five-part analysis:
 5. Overall Verdict:
    A single sentence summarizing whether the source material supports the claim.
 """
+
+
+async def _acompletion_with_backoff(**kwargs) -> Any:
+    """Wraps litellm.acompletion with exponential backoff for transient errors."""
+    delay = 1.0
+    for attempt in range(3):
+        try:
+            return await litellm.acompletion(**kwargs)
+        except TRANSIENT_LITELLM_ERRORS as e:
+            if attempt == 2:
+                raise
+            logger.warning(
+                "Tier 3 transient error (%s) — backoff %.0fs before retry %d/3",
+                type(e).__name__, delay, attempt + 2,
+            )
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30.0)
+
+
+def _completion_with_backoff(**kwargs) -> Any:
+    """Wraps litellm.completion with exponential backoff for transient errors."""
+    delay = 1.0
+    for attempt in range(3):
+        try:
+            return litellm.completion(**kwargs)
+        except TRANSIENT_LITELLM_ERRORS as e:
+            if attempt == 2:
+                raise
+            logger.warning(
+                "Tier 3 transient error (%s) — backoff %.0fs before retry %d/3",
+                type(e).__name__, delay, attempt + 2,
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, 30.0)
 
 
 def render_prompt(ctx: VerificationContext, chunks: list[Chunk]) -> str:
@@ -133,7 +176,7 @@ def evaluate(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3ResponseMode
             "temperature": temperature,
         }
         call_kwargs = adapter.build_kwargs(base_kwargs)
-        response = litellm.completion(**call_kwargs)
+        response = _completion_with_backoff(**call_kwargs)
         cost = litellm.completion_cost(completion_response=response)
         ctx.cost_tracker.add_cost(cost)
 
@@ -175,7 +218,7 @@ async def evaluate_async(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3
             "temperature": temperature,
         }
         call_kwargs = adapter.build_kwargs(base_kwargs)
-        response = await litellm.acompletion(**call_kwargs)
+        response = await _acompletion_with_backoff(**call_kwargs)
         cost = litellm.completion_cost(completion_response=response)
         ctx.cost_tracker.add_cost(cost)
 
