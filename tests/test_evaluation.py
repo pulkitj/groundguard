@@ -263,8 +263,6 @@ def test_parse_response_choices_empty_raises_descriptively(mocker):
     mocker.patch("litellm.completion_cost", return_value=0.0)
 
     ctx = _make_ctx()
-    # With empty choices, parse_response will raise IndexError on choices[0] —
-    # this currently surfaces as a ValueError/IndexError caught by the retry loop,
-    # then after 2 attempts raises ParseError
-    with pytest.raises((ParseError, IndexError, Exception)):
+    # choices=[] causes IndexError in the adapter, caught by retry loop → ParseError after 2 attempts
+    with pytest.raises(ParseError):
         evaluate(ctx, _make_chunks())

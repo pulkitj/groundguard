@@ -139,7 +139,7 @@ def evaluate(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3ResponseMode
 
         try:
             return parse_response(response, ctx.model)
-        except (pydantic.ValidationError, ValueError) as e:
+        except (pydantic.ValidationError, ValueError, IndexError) as e:
             logger.warning(
                 "Tier 3 attempt %d/2 failed validation — retrying with temperature=0.1",
                 attempt + 1,
@@ -181,7 +181,7 @@ async def evaluate_async(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3
 
         try:
             return parse_response(response, ctx.model)
-        except (pydantic.ValidationError, ValueError) as e:
+        except (pydantic.ValidationError, ValueError, IndexError) as e:
             logger.warning(
                 "Tier 3 async attempt %d/2 failed validation — retrying",
                 attempt + 1,
