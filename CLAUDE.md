@@ -34,31 +34,29 @@ pytest -m "not llm and not loaders and not langchain" --cov=agentic_verifier --c
 
 ---
 
-## Build Status (Session 6 — 2026-04-05)
+## Build Status (Session 7 — 2026-04-08)
 
-**All phases 0–15 complete. 90 fast tests passing. Real Suite 18/18 green. Phase 16 (multi-model compatibility) planned — T-60 to T-65.**
+**All phases 0–16 complete. 113 fast tests passing. Real Suite 18/18 green.**
 
-Last commit: `25b2e3a` (README + final progress.json)
+Last commit: `ac9f708` (T-66: async exponential backoff)
 
 | Phase | Content | Status |
 |---|---|---|
 | 0–15 | All phases | ✅ Done |
 | Real Suite | `tests/integration/test_real_suite.py` — 18 fixtures | ✅ 18/18 PASS against `ollama/qwen3:30b` |
-| Phase 16 | Multi-model compatibility — adapters registry, test gaps, fixture scaffold | 📋 Planned (T-60 to T-65) |
+| Phase 16 | Multi-model compatibility — T-60 to T-66 | ✅ Done (2026-04-08) |
 
-### Real Suite Status (Session 6 — COMPLETE)
+### Phase 16 Summary (Session 7 — COMPLETE)
 
-**18/18 tests PASS** against `ollama/qwen3:30b`. Total runtime ~15 minutes.
+Phase 16 delivered 7 tasks (T-60 through T-66) adding formal multi-model compatibility:
 
-Four bugs were found and fixed during first execution:
-
-1. **litellm 1.83.2 drops Ollama content when thinking mode is active** — fixed via `_extra_kwargs()` returning `{"think": False}` for all `ollama/` models. **Note:** Phase 16 (T-62) will replace this with a proper `OLLAMA_ADAPTER` that strips `<think>` tags instead of disabling reasoning.
-
-2. **BM25 IDF negative for single-source corpus** — `SKIP_LLM_HIGH_CONFIDENCE` never fires with N=1 source. Fixed in `test_fixture_a_perfect_match` by adding 4 noise sources.
-
-3. **Fixture I assertion too strict** — claim uses "likely" (hedged language); qwen3 legitimately returns UNVERIFIABLE. Relaxed to `VERIFIED or UNVERIFIABLE`.
-
-4. **Fixture M timeout + asyncio.run() on Windows** — converted to `async def`, reduced batch from 10 to 5 items. Fixture P `sources_used` assertion removed (qwen3 occasionally misattributes cross-source additions — T-64 will restore it with a soft contract).
+- **T-60** — `tests/test_adapters.py`: 17 RED tests for adapter registry (routing + post_process)
+- **T-61** — `adapters/registry.py`: `ModelAdapter` dataclass, `get_adapter()` prefix lookup, 5 concrete adapters (DEFAULT, OLLAMA, OPENAI_REASONING, ANTHROPIC, GOOGLE)
+- **T-62** — `tier3_evaluation.py`: wired registry in; removed `_extra_kwargs()` + `think=False`; `parse_response(response, model)` now routes via adapter
+- **T-63** — Fast suite gap tests: think-tag stripping, `choices=[]` → `ParseError`, `auto_chunk=False`, async cost cap; 3 existing test reliability fixes
+- **T-64** — Integration contract corrections: T-36/T-43 relaxed to soft `VERIFIED or UNVERIFIABLE`; T-39 softened to `!= "VERIFIED"`; T-49 `sources_used` restored as soft assertion
+- **T-65** — `conftest.py` `loader_fixtures`: generates `sample.pdf` + `sample.docx` on-demand via fpdf2/python-docx
+- **T-66** — Exponential backoff wrappers (`_acompletion_with_backoff`, `_completion_with_backoff`) for transient LiteLLM errors (1s base, 2× multiplier, 30s max, 3 attempts)
 
 Run command:
 
@@ -189,7 +187,7 @@ Chunker (loaders/chunker.py):    Chunk  ← defined here, not in models/
 
 **Tier 1 algorithm** — uses `rapidfuzz.fuzz.partial_token_set_ratio` (deliberate deviation from spec's `partial_ratio`). This is a known, preserved decision: `partial_ratio` scored too low on dropped-filler-word cases. Do not revert to `partial_ratio` without re-running the calibration benchmark (Phase 14).
 
-**`parse_response`** — strips markdown fences before `model_validate_json`. Retry catches both `pydantic.ValidationError` and `ValueError` (latter covers `json.JSONDecodeError`).
+**`parse_response(response, model)`** — routes via `get_adapter(model).post_process()`. OLLAMA_ADAPTER strips `<think>` tags (rfind-based; regex fallback), falls back to `reasoning_content` if content is empty. DEFAULT adapter strips markdown fences. Retry catches `pydantic.ValidationError`, `ValueError`, and `IndexError` (the last covers `choices=[]` edge case).
 
 **`auto_chunk=False`** — recommended for large-context models (Gemini 1.5 Pro, Claude 3.5+). BM25 can silently drop low-scoring chunks that contain negating context ("Lost Context Problem").
 
@@ -199,13 +197,10 @@ Chunker (loaders/chunker.py):    Chunk  ← defined here, not in models/
 
 ## Known Open Issues
 
-All 5 session-5 code review gaps are resolved. All Real Suite fixtures pass. Phase 16 tracks the remaining work:
+All Phase 16 tasks are complete. No open issues. Remaining deferred items:
 
-1. **`tiers/tier3_evaluation.py`** — `_extra_kwargs()` only covers `ollama/` prefix; `ollama_chat/` and other thinking-mode providers not handled. **Fix:** T-62 replaces `_extra_kwargs()` with `ModelAdapter` registry.
-2. **`tiers/tier3_evaluation.py`** — `think=False` disables chain-of-thought reasoning on Ollama models, reducing accuracy on inferential claims. **Fix:** T-62 removes `think=False`; OLLAMA_ADAPTER strips `<think>` tags instead.
-3. **No formal multi-model compatibility layer** — OpenAI reasoning models (`o3`, `gpt-5*`) raise API errors if `temperature` is passed. Anthropic adaptive thinking makes `message.parsed` unreliable. Google Gemini can return `None` content silently. **Fix:** T-61 creates `adapters/registry.py`.
-4. **Fast suite coverage gaps** — `parse_response()` with `<think>` tags, `None` content, `choices=[]` error, `auto_chunk=False`, `verify_structured()` both paths are untested. **Fix:** T-63.
-5. **Integration test contracts** — Some fixtures use qwen3-specific relaxations that mask failures on other models. Some contracts too strict (T-36, T-43) or too loose (T-38, T-49). **Fix:** T-64.
+- **T-59** — PyPI publish: deferred, requires package registry credentials.
+- **Real Suite re-run on alternative models** — contracts now use hybrid hard/soft structure (T-64) but have only been validated against `ollama/qwen3:30b`. A run against GPT-4o or Claude 3.5 Sonnet is recommended before publishing.
 
 ---
 
@@ -246,9 +241,7 @@ ollama serve             # starts on http://localhost:11434
 result = verify(claim="...", sources=[...], model="ollama/qwen3:14b", max_spend=0.0)
 ```
 
-**Ollama thinking mode (post Phase 16)** — Thinking-capable Ollama models (qwen3, DeepSeek-R1, Gemma 4, Kimi K2, LFM2.5, GPT-OSS, etc.) emit `<think>...</think>` tags or drop `content` when thinking is active. After T-62 lands, `OLLAMA_ADAPTER` handles this automatically: strips `<think>` tags, falls back to `reasoning_content` if content is empty. Models reason freely — no `think=False` bypass.
-
-**Current state (pre-Phase 16)** — `_extra_kwargs()` passes `think=False` for `ollama/` models as a temporary fix. This disables chain-of-thought reasoning. T-62 removes this.
+**Ollama thinking mode (Phase 16 complete)** — Thinking-capable Ollama models (qwen3, DeepSeek-R1, Gemma 4, Kimi K2, LFM2.5, GPT-OSS, etc.) emit `<think>...</think>` tags or drop `content` when thinking is active. `OLLAMA_ADAPTER` in `adapters/registry.py` handles this automatically: strips `<think>` tags (rfind-based, regex fallback), falls back to `reasoning_content` if content is empty. Models reason freely — `think=False` was removed in T-62.
 
 Ollama supports `response_format` (structured output via JSON schema grammar). `parse_response()` uses the fence-stripping + `<think>` tag stripping fallback for any remaining edge cases.
 

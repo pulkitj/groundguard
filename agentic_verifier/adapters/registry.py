@@ -79,7 +79,7 @@ def _default_post_process(response: Any, model: str = "") -> str:
 
 DEFAULT_ADAPTER = ModelAdapter(
     name="default",
-    build_kwargs=lambda base: base,
+    build_kwargs=lambda base: dict(base),
     post_process=_default_post_process,
 )
 
@@ -108,7 +108,7 @@ def _ollama_post_process(response: Any, model: str = "") -> str:
 
 OLLAMA_ADAPTER = ModelAdapter(
     name="ollama",
-    build_kwargs=lambda base: base,
+    build_kwargs=lambda base: dict(base),
     post_process=_ollama_post_process,
 )
 
@@ -117,6 +117,7 @@ OLLAMA_ADAPTER = ModelAdapter(
 # OPENAI_REASONING_ADAPTER — o1, o3, o4, gpt-5 series
 # ---------------------------------------------------------------------------
 def _openai_reasoning_build_kwargs(base: dict) -> dict:
+    base = dict(base)
     base.pop("temperature", None)
     return base
 
@@ -139,7 +140,7 @@ def _anthropic_post_process(response: Any, model: str = "") -> str:
 
 ANTHROPIC_ADAPTER = ModelAdapter(
     name="anthropic",
-    build_kwargs=lambda base: base,
+    build_kwargs=lambda base: dict(base),
     post_process=_anthropic_post_process,
 )
 
@@ -158,7 +159,7 @@ def _google_post_process(response: Any, model: str = "") -> str:
 
 GOOGLE_ADAPTER = ModelAdapter(
     name="google",
-    build_kwargs=lambda base: base,
+    build_kwargs=lambda base: dict(base),
     post_process=_google_post_process,
 )
 
