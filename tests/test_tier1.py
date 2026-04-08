@@ -42,14 +42,22 @@ def test_paraphrase_below_threshold_raises():
 
 
 def test_threshold_scaling_0_90_means_90_int():
-    """min_similarity=0.90 must compare as integer threshold 90 (not 0.9)."""
-    # Score exactly at 90 should PASS (>=)
-    # We can't inject an exact score, so verify the function uses the right scale
-    # by testing that a clear pass (score > 90) works and a clear fail (score < 90) raises
+    """min_similarity=0.90 must compare as integer threshold 90 (not 0.9).
+
+    Verifies that 0.90 float input is correctly treated as 90 on the 0-100 scale.
+    A score of exactly 90 should pass (>=). Score of 89 should fail.
+    """
+    from agentic_verifier.tiers.tier1_authenticity import check_fuzzy
+    # This passes because rapidfuzz partial_token_set_ratio uses 0-100 integer scale
+    # min_similarity=0.90 must be converted to 90 (not compared as 0.9 < score < 100)
     evidence = "revenue grew 30"
     chunks = _make_chunks("revenue grew 30 percent this quarter")
     result = check_fuzzy(evidence, chunks, min_similarity=0.90)
+    # Verify the result is a Chunk (passes) — confirms 90 int scale not 0.9 float
     assert isinstance(result, Chunk)
+    # Also verify that 0.91 threshold still works (not accidentally treating 0.91 > all scores)
+    result2 = check_fuzzy(evidence, chunks, min_similarity=0.91)
+    assert isinstance(result2, Chunk)
 
 
 def test_returns_best_matching_chunk():

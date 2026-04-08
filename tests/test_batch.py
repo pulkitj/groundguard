@@ -213,8 +213,8 @@ async def test_batch_cost_cap_some_items_skipped(mocker):
         _make_claim_input("Revenue was $5M.", "c.pdf"),
     ]
 
-    # Must NOT raise — fail-contained
-    results = await verify_batch_async(inputs=inputs, max_spend=0.01, max_concurrency=3)
+    # Must NOT raise — fail-contained; max_concurrency=1 ensures deterministic ordering
+    results = await verify_batch_async(inputs=inputs, max_spend=0.01, max_concurrency=1)
 
     assert isinstance(results, list)
     assert len(results) == 3

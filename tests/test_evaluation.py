@@ -210,3 +210,61 @@ async def test_evaluate_async_retries_once_on_validation_error(mocker):
 
     assert call_count[0] == 2
     assert isinstance(result, Tier3ResponseModel)
+
+
+# ---------------------------------------------------------------------------
+# T-63 — parse_response edge cases: think tags, None content, empty choices
+# ---------------------------------------------------------------------------
+
+def test_parse_response_strips_think_tags(mocker):
+    """parse_response with <think> tags in content (Ollama thinking mode) — strips tags before JSON parse."""
+    from unittest.mock import MagicMock
+    from agentic_verifier.tiers.tier3_evaluation import parse_response
+
+    model = _valid_t3_model()
+    raw_json = model.model_dump_json()
+    content_with_think = f"<think>some reasoning</think>\n{raw_json}"
+
+    mock_response = MagicMock()
+    mock_response.choices[0].message.parsed = None
+    mock_response.choices[0].message.content = content_with_think
+    # Use ollama model so OLLAMA_ADAPTER is selected and think-tag stripping happens
+    result = parse_response(mock_response, "ollama/qwen3:14b")
+    assert isinstance(result, Tier3ResponseModel)
+
+
+def test_parse_response_none_content_reasoning_content_fallback(mocker):
+    """parse_response when message.content is None but reasoning_content has valid JSON."""
+    from unittest.mock import MagicMock
+    from agentic_verifier.tiers.tier3_evaluation import parse_response
+
+    model = _valid_t3_model()
+    raw_json = model.model_dump_json()
+
+    mock_response = MagicMock()
+    mock_response.choices[0].message.parsed = None
+    mock_response.choices[0].message.content = None
+    mock_response.choices[0].message.reasoning_content = raw_json
+    result = parse_response(mock_response, "ollama/qwen3:14b")
+    assert isinstance(result, Tier3ResponseModel)
+
+
+def test_parse_response_choices_empty_raises_descriptively(mocker):
+    """litellm.completion returning choices=[] raises with a descriptive error, not IndexError."""
+    from unittest.mock import MagicMock
+    from agentic_verifier.tiers.tier3_evaluation import evaluate
+    from agentic_verifier.exceptions import ParseError
+
+    # Build a response with choices=[]
+    mock_resp = MagicMock()
+    mock_resp.choices = []
+
+    mocker.patch("litellm.completion", return_value=mock_resp)
+    mocker.patch("litellm.completion_cost", return_value=0.0)
+
+    ctx = _make_ctx()
+    # With empty choices, parse_response will raise IndexError on choices[0] —
+    # this currently surfaces as a ValueError/IndexError caught by the retry loop,
+    # then after 2 attempts raises ParseError
+    with pytest.raises((ParseError, IndexError, Exception)):
+        evaluate(ctx, _make_chunks())

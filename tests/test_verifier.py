@@ -394,6 +394,47 @@ def test_verify_structured_schema_failure():
 # T-30 — verify_structured: schema success calls verify() with flattened string
 # ===========================================================================
 
+async def test_averify_cost_exceeded_error_propagates(mocker):
+    """averify() must propagate VerificationCostExceededError (fail-loud contract)."""
+    from agentic_verifier.core.verifier import averify
+    from agentic_verifier.exceptions import VerificationCostExceededError
+    from unittest.mock import AsyncMock, MagicMock
+
+    mocker.patch("agentic_verifier.core.verifier.classifier.parse_and_classify", return_value=[])
+    mocker.patch("agentic_verifier.core.verifier.chunker.chunk_sources", return_value=_chunks())
+    mocker.patch("agentic_verifier.core.verifier.tier1_authenticity.check_fuzzy", return_value=None)
+
+    mock_loop = MagicMock()
+    mock_loop.run_in_executor = AsyncMock(return_value=_escalate_t2())
+    mocker.patch("agentic_verifier.core.verifier.asyncio.get_running_loop", return_value=mock_loop)
+
+    mocker.patch(
+        "agentic_verifier.core.verifier.tier3_evaluation.evaluate_async",
+        new_callable=AsyncMock,
+        side_effect=VerificationCostExceededError("cap hit"),
+    )
+
+    with pytest.raises(VerificationCostExceededError):
+        await averify(claim="Revenue was $5M.", sources=_sources())
+
+
+def test_auto_chunk_false_pipeline_path(mocker):
+    """auto_chunk=False: source forwarded as single chunk, not split by chunker."""
+    from agentic_verifier.core.verifier import verify
+
+    chunker_mock = mocker.patch("agentic_verifier.core.verifier.chunker.chunk_sources")
+    mocker.patch("agentic_verifier.core.verifier.classifier.parse_and_classify", return_value=[])
+    mocker.patch("agentic_verifier.core.verifier.tier1_authenticity.check_fuzzy", return_value=None)
+    mocker.patch("agentic_verifier.core.verifier.tier2_semantic.route_claim", return_value=_escalate_t2())
+    mocker.patch("agentic_verifier.core.verifier.tier3_evaluation.evaluate", return_value=_valid_t3())
+    mocker.patch("agentic_verifier.core.verifier.ResultBuilder.build_llm_result", return_value=_verified_result())
+
+    verify(claim="Revenue was $5M.", sources=_sources(), auto_chunk=False)
+
+    # chunker.chunk_sources should NOT be called when auto_chunk=False
+    chunker_mock.assert_not_called()
+
+
 def test_verify_structured_schema_success(mocker):
     from pydantic import BaseModel
     from agentic_verifier.core.verifier import verify_structured

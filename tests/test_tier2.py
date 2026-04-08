@@ -55,21 +55,31 @@ def test_escalate_all_low_score_uses_document_order():
 
 
 def test_high_score_triggers_skip_llm():
-    """When highest BM25 score >= lexical_threshold (0.85), decision is SKIP_LLM_HIGH_CONFIDENCE."""
-    # Exact vocabulary match should produce high BM25 score
+    """When highest BM25 score >= lexical_threshold (0.85), decision is SKIP_LLM_HIGH_CONFIDENCE.
+
+    Requires N>=5 sources for positive BM25 IDF scores.
+    """
+    from agentic_verifier.models.result import Source
+    # Need at least 5 sources so BM25 IDF is positive and high-confidence match can fire
+    noise_sources = [
+        Source(content="unrelated weather forecast for tomorrow", source_id=f"noise{i}")
+        for i in range(4)
+    ]
+    target_source = Source(content="revenue grew thirty percent quarterly", source_id="s1")
     ctx = VerificationContext(
         claim="revenue grew thirty percent quarterly",
-        original_sources=[Source(content="revenue grew thirty percent quarterly", source_id="s1")],
+        original_sources=[target_source] + noise_sources,
         model="gpt-4o-mini",
     )
-    chunks = [Chunk(
-        parent_source_id="s1",
-        text_content="revenue grew thirty percent quarterly",
-        char_start=0, char_end=36,
-    )]
+    chunks = [
+        Chunk(parent_source_id="s1", text_content="revenue grew thirty percent quarterly", char_start=0, char_end=36),
+        *[
+            Chunk(parent_source_id=f"noise{i}", text_content="unrelated weather forecast for tomorrow", char_start=0, char_end=39)
+            for i in range(4)
+        ],
+    ]
     result = route_claim(ctx, chunks)
-    # BM25 exact match should be very high
-    assert result.decision in (RoutingDecision.SKIP_LLM_HIGH_CONFIDENCE, RoutingDecision.ESCALATE_TO_LLM)
+    assert result.decision == RoutingDecision.SKIP_LLM_HIGH_CONFIDENCE
 
 
 def test_partial_match_triggers_escalate_to_llm():

@@ -65,7 +65,10 @@ def verify(
     )
 
     ctx.tier0_atoms = classifier.parse_and_classify(claim)
-    chunks = chunker.chunk_sources(ctx)
+    if ctx.auto_chunk:
+        chunks = chunker.chunk_sources(ctx)
+    else:
+        chunks = chunker.wrap_as_chunks(ctx.original_sources)
 
     if ctx.agent_provided_evidence:
         tier1_authenticity.check_fuzzy(
@@ -156,7 +159,10 @@ async def averify(
     )
 
     ctx.tier0_atoms = classifier.parse_and_classify(claim)
-    chunks = chunker.chunk_sources(ctx)
+    if ctx.auto_chunk:
+        chunks = chunker.chunk_sources(ctx)
+    else:
+        chunks = chunker.wrap_as_chunks(ctx.original_sources)
 
     if ctx.agent_provided_evidence:
         tier1_authenticity.check_fuzzy(
