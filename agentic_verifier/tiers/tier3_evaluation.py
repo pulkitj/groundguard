@@ -1,7 +1,6 @@
 """Tier 3 LLM evaluation — prompt engine and evaluation entry points."""
 from __future__ import annotations
 import json
-import re as _re
 import pydantic
 from typing import TYPE_CHECKING
 
@@ -10,6 +9,7 @@ import litellm
 from agentic_verifier.models.tier3 import Tier3ResponseModel
 from agentic_verifier.exceptions import ParseError
 from agentic_verifier._log import logger
+from agentic_verifier.adapters.registry import get_adapter
 
 if TYPE_CHECKING:
     from agentic_verifier.models.internal import VerificationContext
@@ -72,9 +72,6 @@ Generate a JSON object with a five-part analysis:
    A single sentence summarizing whether the source material supports the claim.
 """
 
-_MD_FENCE_RE = _re.compile(r'^\s*```(?:json)?\s*\n?(.*?)\n?\s*```\s*$', _re.DOTALL)
-_THINK_TAG_RE = _re.compile(r'<think>.*?</think>', _re.DOTALL | _re.IGNORECASE)
-
 
 def render_prompt(ctx: VerificationContext, chunks: list[Chunk]) -> str:
     """
@@ -100,36 +97,20 @@ def render_prompt(ctx: VerificationContext, chunks: list[Chunk]) -> str:
     )
 
 
-def parse_response(response) -> Tier3ResponseModel:
+def parse_response(response, model: str) -> Tier3ResponseModel:
     """
     Extracts Tier3ResponseModel from a LiteLLM response.
     Primary: uses response.choices[0].message.parsed if available.
-    Fallback: parses content string, stripping markdown fences first.
+    Fallback: adapter post_process extracts and normalizes content string.
     """
     parsed = getattr(response.choices[0].message, 'parsed', None)
-    if parsed is not None and isinstance(parsed, Tier3ResponseModel):
-        return parsed
-
-    raw_content = response.choices[0].message.content
-    # Strip chain-of-thought think tags (Qwen3 and similar models emit these before JSON)
-    raw_content = _THINK_TAG_RE.sub('', raw_content).strip()
-    fence_match = _MD_FENCE_RE.match(raw_content)
-    if fence_match:
-        raw_content = fence_match.group(1)
-
-    return Tier3ResponseModel.model_validate_json(raw_content)
-
-
-def _extra_kwargs(model: str) -> dict:
-    """Return provider-specific extra kwargs for litellm.completion.
-
-    qwen3 on Ollama emits a `thinking` field alongside `content`. litellm 1.83.2 drops
-    the content when the thinking field is present (bug). Passing think=False disables
-    qwen3's chain-of-thought mode so litellm receives a plain content response.
-    """
-    if model.startswith("ollama/"):
-        return {"think": False}
-    return {}
+    if parsed is not None:
+        if isinstance(parsed, Tier3ResponseModel):
+            return parsed
+        if isinstance(parsed, dict):
+            return Tier3ResponseModel.model_validate(parsed)
+    content = get_adapter(model).post_process(response, model)
+    return Tier3ResponseModel.model_validate_json(content)
 
 
 def evaluate(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3ResponseModel:
@@ -137,26 +118,27 @@ def evaluate(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3ResponseMode
     Sync Tier 3 evaluation. 2-attempt retry on ValidationError.
     Raises ParseError after 2 failures.
     """
+    adapter = get_adapter(ctx.model)
     temperature = 0.0
     error_suffix = ""
     prompt = render_prompt(ctx, chunks)
-    extra = _extra_kwargs(ctx.model)
 
     for attempt in range(2):
         messages = [{"role": "user", "content": prompt + error_suffix}]
         logger.debug("Tier 3 attempt %d/2 (temperature=%.1f)", attempt + 1, temperature)
-        response = litellm.completion(
-            model=ctx.model,
-            messages=messages,
-            response_format=Tier3ResponseModel,
-            temperature=temperature,
-            **extra,
-        )
+        base_kwargs = {
+            "model": ctx.model,
+            "messages": messages,
+            "response_format": Tier3ResponseModel,
+            "temperature": temperature,
+        }
+        call_kwargs = adapter.build_kwargs(base_kwargs)
+        response = litellm.completion(**call_kwargs)
         cost = litellm.completion_cost(completion_response=response)
         ctx.cost_tracker.add_cost(cost)
 
         try:
-            return parse_response(response)
+            return parse_response(response, ctx.model)
         except (pydantic.ValidationError, ValueError) as e:
             logger.warning(
                 "Tier 3 attempt %d/2 failed validation — retrying with temperature=0.1",
@@ -178,26 +160,27 @@ async def evaluate_async(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3
     Native async Tier 3 evaluation. 2-attempt retry on ValidationError.
     Uses litellm.acompletion() — no asyncio.run() wrapper.
     """
+    adapter = get_adapter(ctx.model)
     temperature = 0.0
     error_suffix = ""
     prompt = render_prompt(ctx, chunks)
-    extra = _extra_kwargs(ctx.model)
 
     for attempt in range(2):
         messages = [{"role": "user", "content": prompt + error_suffix}]
         logger.debug("Tier 3 async attempt %d/2 (temperature=%.1f)", attempt + 1, temperature)
-        response = await litellm.acompletion(
-            model=ctx.model,
-            messages=messages,
-            response_format=Tier3ResponseModel,
-            temperature=temperature,
-            **extra,
-        )
+        base_kwargs = {
+            "model": ctx.model,
+            "messages": messages,
+            "response_format": Tier3ResponseModel,
+            "temperature": temperature,
+        }
+        call_kwargs = adapter.build_kwargs(base_kwargs)
+        response = await litellm.acompletion(**call_kwargs)
         cost = litellm.completion_cost(completion_response=response)
         ctx.cost_tracker.add_cost(cost)
 
         try:
-            return parse_response(response)
+            return parse_response(response, ctx.model)
         except (pydantic.ValidationError, ValueError) as e:
             logger.warning(
                 "Tier 3 async attempt %d/2 failed validation — retrying",

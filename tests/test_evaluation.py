@@ -75,7 +75,7 @@ def test_parse_response_strips_json_fence():
     mock_response = MagicMock()
     mock_response.choices[0].message.parsed = None
     mock_response.choices[0].message.content = fenced_content
-    result = parse_response(mock_response)
+    result = parse_response(mock_response, "gpt-4o-mini")
     assert isinstance(result, Tier3ResponseModel)
 
 
@@ -87,7 +87,7 @@ def test_parse_response_strips_fence_without_language_tag():
     mock_response = MagicMock()
     mock_response.choices[0].message.parsed = None
     mock_response.choices[0].message.content = fenced
-    result = parse_response(mock_response)
+    result = parse_response(mock_response, "gpt-4o-mini")
     assert isinstance(result, Tier3ResponseModel)
 
 
@@ -98,7 +98,7 @@ def test_parse_response_works_without_fence():
     mock_response = MagicMock()
     mock_response.choices[0].message.parsed = None
     mock_response.choices[0].message.content = raw_json
-    result = parse_response(mock_response)
+    result = parse_response(mock_response, "gpt-4o-mini")
     assert isinstance(result, Tier3ResponseModel)
 
 
@@ -107,7 +107,7 @@ def test_parse_response_uses_parsed_attribute_if_present():
     model = _valid_t3_model()
     mock_response = MagicMock()
     mock_response.choices[0].message.parsed = model
-    result = parse_response(mock_response)
+    result = parse_response(mock_response, "gpt-4o-mini")
     assert result is model
 
 
