@@ -129,3 +129,12 @@ def test_default_post_process_strips_fences():
     response = _make_response('```json\n{"key": "value"}\n```')
     result = DEFAULT_ADAPTER.post_process(response)
     assert result == '{"key": "value"}'
+
+
+def test_nvidia_nim_deepseek_routes_to_ollama_adapter():
+    """nvidia_nim/deepseek-ai/deepseek-r1 must use OLLAMA_ADAPTER for think-tag stripping."""
+    from agentic_verifier.adapters.registry import get_adapter, OLLAMA_ADAPTER
+    adapter = get_adapter("nvidia_nim/deepseek-ai/deepseek-r1")
+    assert adapter.name == "ollama", (
+        f"DeepSeek-R1 on NIM emits <think> tags — must route to OLLAMA_ADAPTER, got: {adapter.name!r}"
+    )

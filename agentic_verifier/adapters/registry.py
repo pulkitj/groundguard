@@ -170,6 +170,7 @@ GOOGLE_ADAPTER = ModelAdapter(
 _REGISTRY: list[tuple[str, ModelAdapter]] = [
     ("ollama_chat/", OLLAMA_ADAPTER),
     ("ollama/", OLLAMA_ADAPTER),
+    ("nvidia_nim/deepseek", OLLAMA_ADAPTER),   # DeepSeek-R1 on NIM emits <think> tags
     ("vertex_ai/gemini", GOOGLE_ADAPTER),
     ("gemini/", GOOGLE_ADAPTER),
     ("anthropic/", ANTHROPIC_ADAPTER),
