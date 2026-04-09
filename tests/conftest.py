@@ -100,7 +100,7 @@ def loader_fixtures():
 from tests.integration.compat_models import ALL_COMPAT_MODELS, CompatModel
 
 
-def pytest_generate_tests(metafunc):
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     """Parametrize compat_model fixture across all registered compat models."""
     if "compat_model" in metafunc.fixturenames:
         metafunc.parametrize(
@@ -111,7 +111,7 @@ def pytest_generate_tests(metafunc):
 
 
 @pytest.fixture
-def compat_model(request) -> CompatModel:
+def compat_model(request: pytest.FixtureRequest) -> CompatModel:
     """
     Yields one CompatModel per parametrize iteration.
     Skips automatically when the model's required_env is not set.
