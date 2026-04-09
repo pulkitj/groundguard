@@ -133,8 +133,7 @@ def test_default_post_process_strips_fences():
 
 def test_nvidia_nim_deepseek_routes_to_ollama_adapter():
     """nvidia_nim/deepseek-ai/deepseek-r1 must use OLLAMA_ADAPTER for think-tag stripping."""
-    from agentic_verifier.adapters.registry import get_adapter, OLLAMA_ADAPTER
     adapter = get_adapter("nvidia_nim/deepseek-ai/deepseek-r1")
-    assert adapter.name == "ollama", (
+    assert adapter is OLLAMA_ADAPTER, (
         f"DeepSeek-R1 on NIM emits <think> tags — must route to OLLAMA_ADAPTER, got: {adapter.name!r}"
     )
