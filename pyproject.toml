@@ -38,6 +38,7 @@ markers = [
     "llm: marks tests as real LLM integration tests (deselect with '-m not llm')",
     "loaders: marks tests requiring optional loaders extras",
     "langchain: marks tests requiring optional langchain extras",
+    "compat: marks tests as multi-model compatibility smoke tests (parametrized across all compat models)",
 ]
 addopts = "--cov=agentic_verifier --cov-report=term-missing"
 timeout = 300

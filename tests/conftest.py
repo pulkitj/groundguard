@@ -88,3 +88,38 @@ def loader_fixtures():
             doc.save(str(docx_path))
         except ImportError:
             pytest.skip("python-docx not installed — run: pip install python-docx")
+
+
+# ---------------------------------------------------------------------------
+# Compat model fixture — parametrized across ALL_COMPAT_MODELS
+# Each model auto-skips if its required_env is not set in the environment.
+# Run: pytest -m compat -v
+# Filter to one model: pytest -m compat -k "nim-llama33"
+# ---------------------------------------------------------------------------
+
+from tests.integration.compat_models import ALL_COMPAT_MODELS, CompatModel
+
+
+def pytest_generate_tests(metafunc):
+    """Parametrize compat_model fixture across all registered compat models."""
+    if "compat_model" in metafunc.fixturenames:
+        metafunc.parametrize(
+            "compat_model",
+            ALL_COMPAT_MODELS,
+            ids=[m.description for m in ALL_COMPAT_MODELS],
+        )
+
+
+@pytest.fixture
+def compat_model(request) -> CompatModel:
+    """
+    Yields one CompatModel per parametrize iteration.
+    Skips automatically when the model's required_env is not set.
+    """
+    model: CompatModel = request.param
+    if model.required_env and not os.environ.get(model.required_env):
+        pytest.skip(
+            f"Skipped — {model.required_env} not set "
+            f"(required for {model.description})"
+        )
+    return model
