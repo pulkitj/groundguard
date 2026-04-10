@@ -39,6 +39,12 @@ OLLAMA_MODELS = [
         required_env="",
         adapter="ollama",
     ),
+    CompatModel(
+        model_str="ollama/qwen3.5:9b",
+        description="ollama-qwen35-9b",
+        required_env="",
+        adapter="ollama",
+    ),
 ]
 
 # ---------------------------------------------------------------------------

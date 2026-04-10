@@ -110,11 +110,48 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         )
 
 
+def _ollama_pulled_models() -> set[str]:
+    """Return set of model names currently pulled in Ollama (tags endpoint)."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
+            import json
+            data = json.loads(r.read())
+            return {m["name"] for m in data.get("models", [])}
+    except Exception:
+        return set()
+
+
+def _ollama_unload(tag: str) -> None:
+    """Unload a model from Ollama VRAM by setting keep_alive=0."""
+    try:
+        import urllib.request
+        import json
+        payload = json.dumps({"model": tag, "keep_alive": 0}).encode()
+        req = urllib.request.Request(
+            "http://localhost:11434/api/chat",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass  # best-effort — don't fail tests if unload fails
+
+
+_current_ollama_model: list[str] = []   # mutable sentinel; holds at most one tag
+
+
 @pytest.fixture
 def compat_model(request: pytest.FixtureRequest) -> CompatModel:
     """
     Yields one CompatModel per parametrize iteration.
-    Skips automatically when the model's required_env is not set.
+    Skips automatically when:
+    - model's required_env is not set (cloud models)
+    - ollama/ model string is not found in locally pulled models
+
+    For local Ollama models: unloads the previously loaded model from VRAM when the
+    active model changes, so only one model occupies GPU/RAM at a time.
     """
     model: CompatModel = request.param
     if model.required_env and not os.environ.get(model.required_env):
@@ -122,4 +159,16 @@ def compat_model(request: pytest.FixtureRequest) -> CompatModel:
             f"Skipped — {model.required_env} not set "
             f"(required for {model.description})"
         )
+    if model.model_str.startswith(("ollama/", "ollama_chat/")):
+        tag = model.model_str.split("/", 1)[1]
+        pulled = _ollama_pulled_models()
+        if pulled and tag not in pulled:
+            pytest.skip(f"Skipped — {tag} not pulled in local Ollama (run: ollama pull {tag})")
+        # Unload previous model if switching to a different one
+        if _current_ollama_model and _current_ollama_model[0] != tag:
+            _ollama_unload(_current_ollama_model[0])
+        if not _current_ollama_model:
+            _current_ollama_model.append(tag)
+        else:
+            _current_ollama_model[0] = tag
     return model

@@ -87,13 +87,41 @@ DEFAULT_ADAPTER = ModelAdapter(
 # ---------------------------------------------------------------------------
 # OLLAMA_ADAPTER — ollama/ and ollama_chat/ prefixes
 # ---------------------------------------------------------------------------
+def _ollama_build_kwargs(base: dict) -> dict:
+    """Force ollama/ → ollama_chat/ and ensure sufficient context for structured output.
+
+    Two issues this fixes:
+
+    1. litellm routes 'ollama/' to /api/generate, which mishandles structured-output
+       responses from thinking-capable models (qwen3, DeepSeek-R1, etc.): the JSON
+       schema output lands in the 'thinking' field while 'response' is empty.
+       /api/chat correctly splits 'content' (JSON) from 'thinking' (reasoning).
+
+    2. Models with a small default num_ctx (e.g. 4K) exhaust their token budget
+       during the thinking phase, leaving nothing for the JSON output. We override
+       num_ctx to 8192 so thinking-capable models have room to reason AND output
+       the full structured response. This override can be raised further if needed.
+    """
+    base = dict(base)
+    model = base.get("model", "")
+    if model.startswith("ollama/"):
+        base["model"] = "ollama_chat/" + model[len("ollama/"):]
+    # Ensure enough context for thinking + structured JSON output (16K covers full Tier3 prompts)
+    options = base.get("extra_body", {}).get("options", {})
+    options.setdefault("num_ctx", 16384)
+    base.setdefault("extra_body", {})["options"] = options
+    # keep_alive=300 holds the model in memory for 5 min so sequential calls don't reload
+    base.setdefault("extra_body", {}).setdefault("keep_alive", 300)
+    return base
+
+
 def _ollama_post_process(response: Any, model: str = "") -> str:
     msg = response.choices[0].message
     content = msg.content
     if content:
         content = _strip_think_tags(content)
     if not content:
-        # litellm 1.83.2 drops content when thinking field is present — try reasoning_content
+        # litellm may drop content if reasoning_content is present — try fallback
         fallback = getattr(msg, 'reasoning_content', None) or ""
         fallback = fallback.strip()
         if fallback.startswith('{'):
@@ -108,7 +136,7 @@ def _ollama_post_process(response: Any, model: str = "") -> str:
 
 OLLAMA_ADAPTER = ModelAdapter(
     name="ollama",
-    build_kwargs=lambda base: dict(base),
+    build_kwargs=_ollama_build_kwargs,
     post_process=_ollama_post_process,
 )
 
