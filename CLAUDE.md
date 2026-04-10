@@ -34,42 +34,62 @@ pytest -m "not llm and not loaders and not langchain" --cov=agentic_verifier --c
 
 ---
 
-## Build Status (Session 9 — 2026-04-10)
+## Build Status (Session 10 — 2026-04-10)
 
-**All phases 0–17 complete (code tasks). 114 fast tests passing. Real Suite 18/18 green against qwen3:30b. Compat Ollama baseline: 3 models PASS. NIM + Gemini runs pending API keys.**
+**All phases 0–17 complete (code tasks). 118 fast tests passing. Real Suite 18/18 green against qwen3:30b. Compat Ollama baseline: 2/3 PASS (qwen3.5:9b pending). NIM baseline T-72 COMPLETE: 7/16 PASS cs01. Gemini pending.**
 
-Last commit: `ae4ff2e` (T-70: 4-test compat smoke suite, 40 parametrized cases)
+Last commit: `b497a34` (T-72: NIM compat baseline — 9 new models, 3 new adapters, 118 fast tests)
 
 | Phase | Content | Status |
 | --- | --- | --- |
 | 0–15 | All phases | ✅ Done |
 | Real Suite | `tests/integration/test_real_suite.py` — 18 fixtures | ✅ 18/18 PASS against `ollama/qwen3:30b` |
 | Phase 16 | Multi-model compatibility — T-60 to T-66 | ✅ Done (2026-04-08) |
-| Phase 17 | Multi-endpoint compat testing — T-67 to T-74 | ✅ Code done; ✅ T-71 Ollama 4/4×2 PASS; ⏳ NIM/Gemini pending |
+| Phase 17 | Multi-endpoint compat testing — T-67 to T-74 | ✅ Code done; ✅ T-71 Ollama 4/4×2 PASS; ✅ T-72 NIM 7/16 cs01 PASS; ⏳ Gemini pending |
 
-### Phase 17 Summary (Session 9 — OLLAMA RUNS COMPLETE)
+### Phase 17 Summary (Session 10 — NIM RUNS COMPLETE)
 
-Phase 17 delivered 4 code tasks (T-67 through T-70) and is executing 4 run tasks:
+#### T-72 NIM baseline (Session 10 — 2026-04-10)
 
-- **T-67** — `adapters/registry.py`: added `("nvidia_nim/deepseek", OLLAMA_ADAPTER)` — DeepSeek-R1 on NIM emits `<think>` tags; DEFAULT_ADAPTER would fail JSON parsing; fast suite now 114 tests
-- **T-68** — `tests/integration/compat_models.py`: frozen `CompatModel` dataclass + 11-model registry (Ollama × 3, NIM × 7, Gemini × 1); single source of truth
-- **T-69** — `tests/conftest.py`: `pytest_generate_tests` hook + `compat_model` fixture (auto-skip on missing env var or unpulled model); `compat` mark registered in `pyproject.toml`
-- **T-70** — `tests/integration/test_compat_suite.py`: 4 smoke tests × 11 models = 44 parametrized cases (`@pytest.mark.compat`)
-- **T-71** — Ollama baseline runs COMPLETE: `qwen3:30b` 4/4 ✅, `qwen3:14b` 4/4 ✅, `qwen3.5:9b` ⏳ pending
+Four fixes applied during NIM runs:
+
+1. **`litellm.completion_cost()` raises for unknown NIM models** — `nvidia_nim/` models are absent from litellm's pricing registry. Fix: wrapped in `try/except` in both sync and async paths; cost = 0.0 for unknown models.
+2. **`NIM_THINKING_ADAPTER`** — clean reasoning_content fallback for NIM thinking models (kimi-k2, gpt-oss, deepseek-v3.2) without Ollama-specific `extra_body.options` / `keep_alive`.
+3. **`NEMOTRON_NIM_ADAPTER`** — Nemotron-Super hangs without `extra_body.chat_template_kwargs + reasoning_budget`. New adapter injects these.
+4. **`JSON_OBJECT_ADAPTER`** — phi-4-mini only supports `json_object`, not `json_schema`. New adapter downgrades `response_format` type.
+5. Fixed model ID typos: `deepseek-v3.2` (dot not underscore), `granite-3.3-8b-instruct` (dots).
+6. Expanded NIM registry from 7 → 16 models (added deepseek-v3.2, nemotron-super, gemma4, kimi-k2, mistral-small-4, phi-4-mini, granite-3.3-8b, gpt-oss-120b, minimax-m2.5).
+
+**NIM cs01 results:**
+
+| Model | cs01 | Notes |
+| --- | --- | --- |
+| `llama-3.3-70b-instruct` | ✅ 4/4 full suite | |
+| `deepseek-v3.2` | ✅ | ~47s |
+| `gemma-4-31b-it` | ✅ | ~10s |
+| `mistral-small-4-119b` | ✅ | ~5s |
+| `gpt-oss-120b` | ✅ | ~5s |
+| `minimax-m2.5` | ✅ | ~10s |
+| `kimi-k2-thinking` | ✅ | ~138s (thinking model) |
+| `nemotron-super-120b` | ⏳ server timeout | Code fix ready; awaiting server availability |
+| `phi-4-mini-instruct` | ⏳ server timeout | Code fix ready; awaiting server availability |
+| `granite-3.3-8b-instruct` | ⏳ server timeout | Code fix ready; awaiting server availability |
+| `deepseek-r1` | ❌ 410 Gone | EOL 2026-01-26 |
+| `nemotron-70b` | ❌ 404 | No account access |
+| `qwen25-72b` | ❌ 404 | Unavailable |
+| `mixtral-8x22b` | ❌ timeout | Server unresponsive |
+| `nemotron-340b` | ❌ UnsupportedParams | No `response_format` support |
+| `mistral-small-24b` | ❌ 400 | `json_schema` not supported |
+
+Fast suite: **118 tests** passing.
 
 #### Session 9 adapter fixes (OLLAMA_ADAPTER `build_kwargs`)
 
-Three bugs found during Ollama runs and fixed:
+Three bugs found during Ollama runs:
 
-1. **litellm routes `ollama/` → `/api/generate`** instead of `/api/chat`. With structured `response_format`, the JSON schema output lands in the `thinking` field while `response` is empty. Fix: `_ollama_build_kwargs` remaps `ollama/` → `ollama_chat/` to force `/api/chat`.
-2. **Thinking-capable models exhaust 4K default context** during reasoning, leaving nothing for the JSON output. Fix: `_ollama_build_kwargs` sets `num_ctx=16384` so both thinking and structured output fit.
-3. **`keep_alive=300`** added to hold model in VRAM during sequential test calls (avoids reload overhead).
-
-Additionally:
-
-- `conftest.py`: `_ollama_pulled_models()` — skips tests for models not yet pulled
-- `conftest.py`: `_ollama_unload()` + model-switching logic — unloads previous model when active model changes to free VRAM
-- `compat_models.py`: added `ollama/qwen3.5:9b` as third Ollama model
+1. **litellm routes `ollama/` → `/api/generate`** instead of `/api/chat` — remapped to `ollama_chat/`.
+2. **Thinking-capable models exhaust 4K default context** — `_ollama_build_kwargs` sets `num_ctx=16384`.
+3. **`keep_alive=300`** added to hold model in VRAM during sequential test calls.
 
 Run compat suite (keys auto-determine which models execute):
 
