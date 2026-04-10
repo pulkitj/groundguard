@@ -142,6 +142,38 @@ OLLAMA_ADAPTER = ModelAdapter(
 
 
 # ---------------------------------------------------------------------------
+# NIM_THINKING_ADAPTER — NIM-hosted thinking models (kimi-k2, gpt-oss, etc.)
+# Uses reasoning_content fallback like OLLAMA_ADAPTER but sends no
+# Ollama-specific extra_body fields (options/keep_alive) to the NIM endpoint.
+# ---------------------------------------------------------------------------
+NIM_THINKING_ADAPTER = ModelAdapter(
+    name="nim_thinking",
+    build_kwargs=lambda base: dict(base),
+    post_process=_ollama_post_process,
+)
+
+
+# ---------------------------------------------------------------------------
+# NEMOTRON_NIM_ADAPTER — nvidia/nemotron-3-super-120b-a12b
+# Requires chat_template_kwargs + reasoning_budget in extra_body, otherwise
+# the server hangs without returning a response.
+# ---------------------------------------------------------------------------
+def _nemotron_build_kwargs(base: dict) -> dict:
+    base = dict(base)
+    extra = base.setdefault("extra_body", {})
+    extra.setdefault("chat_template_kwargs", {"enable_thinking": True})
+    extra.setdefault("reasoning_budget", 16384)
+    return base
+
+
+NEMOTRON_NIM_ADAPTER = ModelAdapter(
+    name="nemotron_nim",
+    build_kwargs=_nemotron_build_kwargs,
+    post_process=_ollama_post_process,
+)
+
+
+# ---------------------------------------------------------------------------
 # OPENAI_REASONING_ADAPTER — o1, o3, o4, gpt-5 series
 # ---------------------------------------------------------------------------
 def _openai_reasoning_build_kwargs(base: dict) -> dict:
@@ -193,12 +225,35 @@ GOOGLE_ADAPTER = ModelAdapter(
 
 
 # ---------------------------------------------------------------------------
+# JSON_OBJECT_ADAPTER — models that support only json_object (not json_schema)
+# e.g. nvidia_nim/microsoft/phi-4-mini-instruct
+# ---------------------------------------------------------------------------
+def _json_object_build_kwargs(base: dict) -> dict:
+    base = dict(base)
+    base["response_format"] = {"type": "json_object"}
+    return base
+
+
+JSON_OBJECT_ADAPTER = ModelAdapter(
+    name="json_object",
+    build_kwargs=_json_object_build_kwargs,
+    post_process=_default_post_process,
+)
+
+
+# ---------------------------------------------------------------------------
 # Registry & Lookup — ordered most-specific to least-specific prefix
 # ---------------------------------------------------------------------------
 _REGISTRY: list[tuple[str, ModelAdapter]] = [
     ("ollama_chat/", OLLAMA_ADAPTER),
     ("ollama/", OLLAMA_ADAPTER),
-    ("nvidia_nim/deepseek", OLLAMA_ADAPTER),   # DeepSeek-R1 on NIM emits <think> tags
+    # NIM thinking models — emit reasoning_content
+    ("nvidia_nim/deepseek", NIM_THINKING_ADAPTER),           # DeepSeek-R1/V3 on NIM
+    ("nvidia_nim/nvidia/nemotron-3-super", NEMOTRON_NIM_ADAPTER),  # requires chat_template_kwargs
+    ("nvidia_nim/moonshotai/kimi-k2", NIM_THINKING_ADAPTER),      # Kimi K2 thinking
+    ("nvidia_nim/openai/gpt-oss", NIM_THINKING_ADAPTER),          # GPT-OSS thinking
+    # NIM json_object-only models
+    ("nvidia_nim/microsoft/phi-4-mini", JSON_OBJECT_ADAPTER),
     ("vertex_ai/gemini", GOOGLE_ADAPTER),
     ("gemini/", GOOGLE_ADAPTER),
     ("anthropic/", ANTHROPIC_ADAPTER),

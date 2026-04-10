@@ -177,7 +177,10 @@ def evaluate(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3ResponseMode
         }
         call_kwargs = adapter.build_kwargs(base_kwargs)
         response = _completion_with_backoff(**call_kwargs)
-        cost = litellm.completion_cost(completion_response=response)
+        try:
+            cost = litellm.completion_cost(completion_response=response)
+        except Exception:
+            cost = 0.0  # unknown model — no pricing data in litellm registry
         ctx.cost_tracker.add_cost(cost)
 
         try:
@@ -219,7 +222,10 @@ async def evaluate_async(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3
         }
         call_kwargs = adapter.build_kwargs(base_kwargs)
         response = await _acompletion_with_backoff(**call_kwargs)
-        cost = litellm.completion_cost(completion_response=response)
+        try:
+            cost = litellm.completion_cost(completion_response=response)
+        except Exception:
+            cost = 0.0  # unknown model — no pricing data in litellm registry
         ctx.cost_tracker.add_cost(cost)
 
         try:

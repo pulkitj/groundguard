@@ -7,6 +7,9 @@ from agentic_verifier.adapters.registry import (
     get_adapter,
     ModelAdapter,
     OLLAMA_ADAPTER,
+    NIM_THINKING_ADAPTER,
+    NEMOTRON_NIM_ADAPTER,
+    JSON_OBJECT_ADAPTER,
     GOOGLE_ADAPTER,
     ANTHROPIC_ADAPTER,
     OPENAI_REASONING_ADAPTER,
@@ -131,9 +134,40 @@ def test_default_post_process_strips_fences():
     assert result == '{"key": "value"}'
 
 
-def test_nvidia_nim_deepseek_routes_to_ollama_adapter():
-    """nvidia_nim/deepseek-ai/deepseek-r1 must use OLLAMA_ADAPTER for think-tag stripping."""
+def test_nvidia_nim_deepseek_routes_to_nim_thinking_adapter():
+    """nvidia_nim/deepseek-ai/* must use NIM_THINKING_ADAPTER for reasoning_content fallback."""
     adapter = get_adapter("nvidia_nim/deepseek-ai/deepseek-r1")
-    assert adapter is OLLAMA_ADAPTER, (
-        f"DeepSeek-R1 on NIM emits <think> tags — must route to OLLAMA_ADAPTER, got: {adapter.name!r}"
+    assert adapter is NIM_THINKING_ADAPTER, (
+        f"DeepSeek on NIM routes to NIM_THINKING_ADAPTER, got: {adapter.name!r}"
     )
+
+
+def test_nvidia_nim_nemotron_super_routes_to_nemotron_adapter():
+    """nemotron-3-super requires chat_template_kwargs — must use NEMOTRON_NIM_ADAPTER."""
+    adapter = get_adapter("nvidia_nim/nvidia/nemotron-3-super-120b-a12b")
+    assert adapter is NEMOTRON_NIM_ADAPTER, (
+        f"Nemotron Super must route to NEMOTRON_NIM_ADAPTER, got: {adapter.name!r}"
+    )
+
+
+def test_nvidia_nim_nemotron_adapter_injects_chat_template_kwargs():
+    """NEMOTRON_NIM_ADAPTER.build_kwargs must add chat_template_kwargs + reasoning_budget."""
+    base = {"model": "nvidia_nim/nvidia/nemotron-3-super-120b-a12b", "messages": []}
+    result = NEMOTRON_NIM_ADAPTER.build_kwargs(base)
+    assert result["extra_body"]["chat_template_kwargs"] == {"enable_thinking": True}
+    assert result["extra_body"]["reasoning_budget"] == 16384
+
+
+def test_nvidia_nim_phi4_routes_to_json_object_adapter():
+    """phi-4-mini only supports json_object — must use JSON_OBJECT_ADAPTER."""
+    adapter = get_adapter("nvidia_nim/microsoft/phi-4-mini-instruct")
+    assert adapter is JSON_OBJECT_ADAPTER, (
+        f"phi-4-mini must route to JSON_OBJECT_ADAPTER, got: {adapter.name!r}"
+    )
+
+
+def test_json_object_adapter_sets_response_format():
+    """JSON_OBJECT_ADAPTER must replace response_format with {type: json_object}."""
+    base = {"model": "nvidia_nim/microsoft/phi-4-mini-instruct", "response_format": {"type": "json_schema"}}
+    result = JSON_OBJECT_ADAPTER.build_kwargs(base)
+    assert result["response_format"] == {"type": "json_object"}

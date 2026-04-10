@@ -95,6 +95,61 @@ NIM_MODELS = [
         required_env="NVIDIA_NIM_API_KEY",
         adapter="default",
     ),
+    # --- newly added 2026-04-10 ---
+    CompatModel(
+        model_str="nvidia_nim/deepseek-ai/deepseek-v3.2",
+        description="nim-deepseek-v3.2",
+        required_env="NVIDIA_NIM_API_KEY",
+        adapter="nim_thinking",
+    ),
+    CompatModel(
+        model_str="nvidia_nim/nvidia/nemotron-3-super-120b-a12b",
+        description="nim-nemotron-super-120b",
+        required_env="NVIDIA_NIM_API_KEY",
+        adapter="nemotron_nim",  # requires chat_template_kwargs + reasoning_budget
+    ),
+    CompatModel(
+        model_str="nvidia_nim/google/gemma-4-31b-it",
+        description="nim-gemma4-31b",
+        required_env="NVIDIA_NIM_API_KEY",
+        adapter="default",
+    ),
+    CompatModel(
+        model_str="nvidia_nim/moonshotai/kimi-k2-thinking",
+        description="nim-kimi-k2",
+        required_env="NVIDIA_NIM_API_KEY",
+        adapter="nim_thinking",
+    ),
+    CompatModel(
+        model_str="nvidia_nim/mistralai/mistral-small-4-119b-2603",
+        description="nim-mistral-small-4",
+        required_env="NVIDIA_NIM_API_KEY",
+        adapter="default",
+    ),
+    CompatModel(
+        model_str="nvidia_nim/microsoft/phi-4-mini-instruct",
+        description="nim-phi4-mini",
+        required_env="NVIDIA_NIM_API_KEY",
+        adapter="json_object",  # only supports json_object, not json_schema
+    ),
+    CompatModel(
+        model_str="nvidia_nim/ibm/granite-3.3-8b-instruct",
+        description="nim-granite-3.3-8b",
+        required_env="NVIDIA_NIM_API_KEY",
+        adapter="default",
+    ),
+    CompatModel(
+        model_str="nvidia_nim/openai/gpt-oss-120b",
+        description="nim-gpt-oss-120b",
+        required_env="NVIDIA_NIM_API_KEY",
+        adapter="nim_thinking",
+    ),
+    CompatModel(
+        model_str="nvidia_nim/minimaxai/minimax-m2.5",
+        description="nim-minimax-m2.5",
+        required_env="NVIDIA_NIM_API_KEY",
+        adapter="default",
+    ),
 ]
 
 # ---------------------------------------------------------------------------
