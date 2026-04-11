@@ -150,6 +150,14 @@ def test_nvidia_nim_nemotron_super_routes_to_nemotron_adapter():
     )
 
 
+def test_nvidia_nim_nemotron_nano_routes_to_nemotron_adapter():
+    """nemotron-3-nano requires same chat_template_kwargs pattern — must use NEMOTRON_NIM_ADAPTER."""
+    adapter = get_adapter("nvidia_nim/nvidia/nemotron-3-nano-30b-a3b")
+    assert adapter is NEMOTRON_NIM_ADAPTER, (
+        f"Nemotron Nano must route to NEMOTRON_NIM_ADAPTER, got: {adapter.name!r}"
+    )
+
+
 def test_nvidia_nim_nemotron_adapter_injects_chat_template_kwargs():
     """NEMOTRON_NIM_ADAPTER.build_kwargs must add chat_template_kwargs + reasoning_budget."""
     base = {"model": "nvidia_nim/nvidia/nemotron-3-super-120b-a12b", "messages": []}

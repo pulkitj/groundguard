@@ -34,11 +34,11 @@ pytest -m "not llm and not loaders and not langchain" --cov=agentic_verifier --c
 
 ---
 
-## Build Status (Session 10 — 2026-04-10)
+## Build Status (Session 12 — 2026-04-11)
 
-**All phases 0–17 complete (code tasks). 118 fast tests passing. Real Suite 18/18 green against qwen3:30b. Compat Ollama baseline: 2/3 PASS (qwen3.5:9b pending). NIM baseline T-72 COMPLETE: 7/16 PASS cs01. Gemini pending.**
+**All phases 0–17 complete (code tasks). 119 fast tests passing. Real Suite 18/18 green against qwen3:30b. Compat Ollama baseline: 2/3 PASS (qwen3.5:9b pending). NIM baseline T-72 COMPLETE: 7/16 PASS cs01. Gemini pending.**
 
-Last commit: `b497a34` (T-72: NIM compat baseline — 9 new models, 3 new adapters, 118 fast tests)
+Last commit: (session 12 — api_base param added; anthropic-via-ollama compat entry; Ollama skip fix; docx import lint fix)
 
 | Phase | Content | Status |
 | --- | --- | --- |
@@ -47,7 +47,33 @@ Last commit: `b497a34` (T-72: NIM compat baseline — 9 new models, 3 new adapte
 | Phase 16 | Multi-model compatibility — T-60 to T-66 | ✅ Done (2026-04-08) |
 | Phase 17 | Multi-endpoint compat testing — T-67 to T-74 | ✅ Code done; ✅ T-71 Ollama 4/4×2 PASS; ✅ T-72 NIM 7/16 cs01 PASS; ⏳ Gemini pending |
 
-### Phase 17 Summary (Session 10 — NIM RUNS COMPLETE)
+### Phase 17 Summary (Session 12 — API_BASE + ANTHROPIC-VIA-OLLAMA)
+
+#### Session 12 changes (2026-04-11)
+
+Four changes:
+
+1. **`api_base` parameter added to `verify()` / `averify()`** — `api_base: str | None = None` propagates through `VerificationContext` and is injected into `base_kwargs` in `tier3_evaluation.py`. Enables redirecting any provider-prefixed model string to a custom endpoint (e.g. `anthropic/qwen3:14b` + `api_base="http://localhost:11434"` → Ollama's Anthropic-compatible `/api/messages` endpoint).
+
+2. **`ANTHROPIC_VIA_OLLAMA_MODELS` added to `compat_models.py`** — one entry: `anthropic/qwen3:14b` with `api_base="http://localhost:11434"`. Tests ANTHROPIC_ADAPTER response handling end-to-end against a local model without real Anthropic API keys. `CompatModel` dataclass gains `api_base: str | None = None` field; all real suite functions and compat wrappers forward it.
+
+3. **Ollama skip fix in `conftest.py`** — old guard `if pulled and tag not in pulled` silently ran tests when Ollama was unreachable (empty `pulled` set made the condition always False). Fixed: explicit `if not pulled: pytest.skip("Ollama not running...")` before the tag check.
+
+4. **`docx` import lint fix** — `from docx import Document` in `loader_fixtures` now has `# type: ignore[import-not-found]` since `python-docx` is an optional extra not visible to the type checker.
+
+#### Session 11 changes (2026-04-10)
+
+Three changes based on project direction:
+
+1. **Compat suite raised to full quality bar** — `test_compat_suite.py` now runs all 18 real suite fixtures (T-34 through T-51) against every compat model. Replaced 4 reduced smoke tests (CS-01 through CS-04) with 18 wrapper functions delegating to `test_real_suite`. No duplication — contract changes in real suite propagate automatically. Failures are classified by humans as pipeline bug vs. model limitation; the test bar is not lowered to mask either.
+
+2. **phi-4-mini and granite-3.3-8b moved from NIM → Ollama** — Both models will be run locally via Ollama once pulled. Added `ollama/phi4-mini` and `ollama/granite3.3:8b` to `OLLAMA_MODELS`. On Ollama these models use `OLLAMA_ADAPTER` (no `json_object` downgrade needed — Ollama supports `json_schema` natively via grammar). The NIM `JSON_OBJECT_ADAPTER` and its registry entry remain for ad-hoc NIM use.
+
+3. **`nvidia_nim/nvidia/nemotron-3-nano-30b-a3b` added to NIM suite** — Same `chat_template_kwargs + reasoning_budget` pattern as nemotron-super (confirmed via NVIDIA sample code). Uses `NEMOTRON_NIM_ADAPTER`. Registry entry `("nvidia_nim/nvidia/nemotron-3-nano", NEMOTRON_NIM_ADAPTER)` added. One new fast test: `test_nvidia_nim_nemotron_nano_routes_to_nemotron_adapter`.
+
+Current compat model counts: 5 Ollama + 15 NIM + 1 Gemini + 1 Anthropic-via-Ollama = 22 models
+
+Compat suite: 18 fixtures × 22 models = 396 parametrized cases (auto-skipped when env key absent or Ollama model not pulled).
 
 #### T-72 NIM baseline (Session 10 — 2026-04-10)
 
@@ -60,7 +86,7 @@ Four fixes applied during NIM runs:
 5. Fixed model ID typos: `deepseek-v3.2` (dot not underscore), `granite-3.3-8b-instruct` (dots).
 6. Expanded NIM registry from 7 → 16 models (added deepseek-v3.2, nemotron-super, gemma4, kimi-k2, mistral-small-4, phi-4-mini, granite-3.3-8b, gpt-oss-120b, minimax-m2.5).
 
-**NIM cs01 results:**
+#### NIM cs01 results
 
 | Model | cs01 | Notes |
 | --- | --- | --- |
@@ -72,8 +98,7 @@ Four fixes applied during NIM runs:
 | `minimax-m2.5` | ✅ | ~10s |
 | `kimi-k2-thinking` | ✅ | ~138s (thinking model) |
 | `nemotron-super-120b` | ⏳ server timeout | Code fix ready; awaiting server availability |
-| `phi-4-mini-instruct` | ⏳ server timeout | Code fix ready; awaiting server availability |
-| `granite-3.3-8b-instruct` | ⏳ server timeout | Code fix ready; awaiting server availability |
+| `nemotron-nano-30b` | ⏳ not yet run | Added session 11 |
 | `deepseek-r1` | ❌ 410 Gone | EOL 2026-01-26 |
 | `nemotron-70b` | ❌ 404 | No account access |
 | `qwen25-72b` | ❌ 404 | Unavailable |
@@ -81,7 +106,7 @@ Four fixes applied during NIM runs:
 | `nemotron-340b` | ❌ UnsupportedParams | No `response_format` support |
 | `mistral-small-24b` | ❌ 400 | `json_schema` not supported |
 
-Fast suite: **118 tests** passing.
+Fast suite: **119 tests** passing.
 
 #### Session 9 adapter fixes (OLLAMA_ADAPTER `build_kwargs`)
 

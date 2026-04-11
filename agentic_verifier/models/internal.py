@@ -78,6 +78,7 @@ class VerificationContext:
     top_k_chunks: int = 5
 
     agent_provided_evidence: str | None = None
+    api_base: str | None = None
 
     cost_tracker: SharedCostTracker = field(
         default_factory=lambda: SharedCostTracker(max_spend=float('inf'))

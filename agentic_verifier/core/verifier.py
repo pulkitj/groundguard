@@ -43,6 +43,7 @@ def verify(
     tier1_min_similarity=0.90,
     max_spend=0.50,
     agent_provided_evidence=None,
+    api_base=None,
 ) -> VerificationResult:
     """Synchronous verification entry point."""
     if not claim or not isinstance(claim, str):
@@ -61,6 +62,7 @@ def verify(
         max_source_tokens=max_source_tokens,
         tier1_min_similarity=tier1_min_similarity,
         agent_provided_evidence=agent_provided_evidence,
+        api_base=api_base,
         cost_tracker=tracker,
     )
 
@@ -136,6 +138,7 @@ async def averify(
     tier1_min_similarity=0.90,
     max_spend=0.50,
     agent_provided_evidence=None,
+    api_base=None,
     cost_tracker: SharedCostTracker | None = None,
 ) -> VerificationResult:
     """Asynchronous verification entry point."""
@@ -155,6 +158,7 @@ async def averify(
         max_source_tokens=max_source_tokens,
         tier1_min_similarity=tier1_min_similarity,
         agent_provided_evidence=agent_provided_evidence,
+        api_base=api_base,
         cost_tracker=tracker,
     )
 

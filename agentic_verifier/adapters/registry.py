@@ -250,6 +250,7 @@ _REGISTRY: list[tuple[str, ModelAdapter]] = [
     # NIM thinking models — emit reasoning_content
     ("nvidia_nim/deepseek", NIM_THINKING_ADAPTER),           # DeepSeek-R1/V3 on NIM
     ("nvidia_nim/nvidia/nemotron-3-super", NEMOTRON_NIM_ADAPTER),  # requires chat_template_kwargs
+    ("nvidia_nim/nvidia/nemotron-3-nano", NEMOTRON_NIM_ADAPTER),   # requires chat_template_kwargs
     ("nvidia_nim/moonshotai/kimi-k2", NIM_THINKING_ADAPTER),      # Kimi K2 thinking
     ("nvidia_nim/openai/gpt-oss", NIM_THINKING_ADAPTER),          # GPT-OSS thinking
     # NIM json_object-only models

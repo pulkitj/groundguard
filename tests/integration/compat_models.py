@@ -21,6 +21,7 @@ class CompatModel:
     description: str
     required_env: str   # empty string means local (no key required)
     adapter: str
+    api_base: str | None = None  # override endpoint (e.g. local Ollama Anthropic endpoint)
 
 
 # ---------------------------------------------------------------------------
@@ -42,6 +43,18 @@ OLLAMA_MODELS = [
     CompatModel(
         model_str="ollama/qwen3.5:9b",
         description="ollama-qwen35-9b",
+        required_env="",
+        adapter="ollama",
+    ),
+    CompatModel(
+        model_str="ollama/phi4-mini",
+        description="ollama-phi4-mini",
+        required_env="",
+        adapter="ollama",
+    ),
+    CompatModel(
+        model_str="ollama/granite3.3:8b",
+        description="ollama-granite3.3-8b",
         required_env="",
         adapter="ollama",
     ),
@@ -109,6 +122,12 @@ NIM_MODELS = [
         adapter="nemotron_nim",  # requires chat_template_kwargs + reasoning_budget
     ),
     CompatModel(
+        model_str="nvidia_nim/nvidia/nemotron-3-nano-30b-a3b",
+        description="nim-nemotron-nano-30b",
+        required_env="NVIDIA_NIM_API_KEY",
+        adapter="nemotron_nim",  # same chat_template_kwargs + reasoning_budget pattern
+    ),
+    CompatModel(
         model_str="nvidia_nim/google/gemma-4-31b-it",
         description="nim-gemma4-31b",
         required_env="NVIDIA_NIM_API_KEY",
@@ -123,18 +142,6 @@ NIM_MODELS = [
     CompatModel(
         model_str="nvidia_nim/mistralai/mistral-small-4-119b-2603",
         description="nim-mistral-small-4",
-        required_env="NVIDIA_NIM_API_KEY",
-        adapter="default",
-    ),
-    CompatModel(
-        model_str="nvidia_nim/microsoft/phi-4-mini-instruct",
-        description="nim-phi4-mini",
-        required_env="NVIDIA_NIM_API_KEY",
-        adapter="json_object",  # only supports json_object, not json_schema
-    ),
-    CompatModel(
-        model_str="nvidia_nim/ibm/granite-3.3-8b-instruct",
-        description="nim-granite-3.3-8b",
         required_env="NVIDIA_NIM_API_KEY",
         adapter="default",
     ),
@@ -165,6 +172,23 @@ GEMINI_MODELS = [
 ]
 
 # ---------------------------------------------------------------------------
+# Anthropic via Ollama — tests ANTHROPIC_ADAPTER path without real API keys.
+# Uses Ollama's /api/messages Anthropic-compatible endpoint.
+# Requires: ollama serve + the model pulled locally.
+# model_str uses anthropic/ prefix so litellm uses Anthropic wire format;
+# api_base redirects to localhost instead of Anthropic's servers.
+# ---------------------------------------------------------------------------
+ANTHROPIC_VIA_OLLAMA_MODELS = [
+    CompatModel(
+        model_str="anthropic/qwen3:14b",
+        description="anthropic-via-ollama-qwen3-14b",
+        required_env="",
+        adapter="anthropic",
+        api_base="http://localhost:11434",
+    ),
+]
+
+# ---------------------------------------------------------------------------
 # Full list — order determines test parametrize order
 # ---------------------------------------------------------------------------
-ALL_COMPAT_MODELS: list[CompatModel] = OLLAMA_MODELS + NIM_MODELS + GEMINI_MODELS
+ALL_COMPAT_MODELS: list[CompatModel] = OLLAMA_MODELS + NIM_MODELS + GEMINI_MODELS + ANTHROPIC_VIA_OLLAMA_MODELS

@@ -23,7 +23,7 @@ VALID_STATUSES = {"VERIFIED", "CONTRADICTED", "UNVERIFIABLE", "PARSE_ERROR", "ER
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_a_perfect_match(llm_model: str):
+def test_fixture_a_perfect_match(llm_model: str, api_base: str | None = None):
     """T-34: Perfect verbatim match should be VERIFIED via tier2_lexical (BM25 high-confidence, no LLM call).
 
     4 noise sources are added so BM25 IDF is positive for claim-specific terms (Q3, revenue,
@@ -40,7 +40,7 @@ def test_fixture_a_perfect_match(llm_model: str):
         Source(content="Human resources policy and staffing guidelines.", source_id="hr.pdf"),
     ]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.status == "VERIFIED"
     assert result.verification_method == "tier2_lexical"
@@ -51,12 +51,12 @@ def test_fixture_a_perfect_match(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_b_financial_loophole_wrong_number(llm_model: str):
+def test_fixture_b_financial_loophole_wrong_number(llm_model: str, api_base: str | None = None):
     """T-35: Claim with wrong number (300% vs 30%) should be CONTRADICTED via tier3_llm."""
     claim = "Revenue grew by 300% year-over-year."
     sources = [Source(content="Revenue grew by 30% year-over-year.", source_id="report.pdf")]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.status == "CONTRADICTED"
     assert result.verification_method == "tier3_llm"
@@ -67,12 +67,12 @@ def test_fixture_b_financial_loophole_wrong_number(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_c_casual_wording_typos(llm_model: str):
+def test_fixture_c_casual_wording_typos(llm_model: str, api_base: str | None = None):
     """T-36: Casual phrasing with typo should still be VERIFIED (BM25 + LLM bridges imperfection)."""
     claim = "The companys revenue was 5 million bucks in Q3"  # typo + casual
     sources = [Source(content="The company's Q3 revenue was $5 million.", source_id="report.pdf")]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.status in ("VERIFIED", "UNVERIFIABLE"), (
         f"Casual wording with typo should be VERIFIED or UNVERIFIABLE (model may be conservative), got: {result.status}"
@@ -87,12 +87,12 @@ def test_fixture_c_casual_wording_typos(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_d_formatting_drift(llm_model: str):
+def test_fixture_d_formatting_drift(llm_model: str, api_base: str | None = None):
     """T-37: Formatting difference ($4M vs 'four million dollars') should NOT produce false CONTRADICTED."""
     claim = "Revenue was four million dollars."
     sources = [Source(content="Revenue was $4M.", source_id="report.pdf")]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.status in ("VERIFIED", "UNVERIFIABLE"), (
         f"Expected VERIFIED or UNVERIFIABLE for formatting drift, got: {result.status}"
@@ -107,12 +107,12 @@ def test_fixture_d_formatting_drift(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_e_all_low_score_paraphrase(llm_model: str):
+def test_fixture_e_all_low_score_paraphrase(llm_model: str, api_base: str | None = None):
     """T-38: Highly paraphrased claim with no lexical overlap (Branch C) should go through LLM."""
     claim = "Profits increased substantially during the period."
     sources = [Source(content="Net income rose significantly in the quarter.", source_id="report.pdf")]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     # Branch C escalates to LLM; result can be any valid status
     assert result.verification_method in ("tier3_llm", "tier2_lexical")
@@ -124,12 +124,12 @@ def test_fixture_e_all_low_score_paraphrase(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_f_gibberish_unclear_pronouns(llm_model: str):
+def test_fixture_f_gibberish_unclear_pronouns(llm_model: str, api_base: str | None = None):
     """T-39: Vague claim with unclear pronouns should be UNVERIFIABLE."""
     claim = "It went up because of the thing with those results."
     sources = [Source(content="Q3 revenue was $5 million.", source_id="report.pdf")]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.status != "VERIFIED", (
         f"Vague claim with unclear pronouns must not be VERIFIED, got: {result.status}"
@@ -141,7 +141,7 @@ def test_fixture_f_gibberish_unclear_pronouns(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_g_out_of_domain_hallucination(llm_model: str):
+def test_fixture_g_out_of_domain_hallucination(llm_model: str, api_base: str | None = None):
     """T-40: Claim about product launch not present in financial source should NOT be VERIFIED."""
     claim = "The company launched a new AI product in 2023."
     sources = [Source(
@@ -149,7 +149,7 @@ def test_fixture_g_out_of_domain_hallucination(llm_model: str):
         source_id="report.pdf"
     )]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.status in ("CONTRADICTED", "UNVERIFIABLE"), (
         f"Out-of-domain hallucination must not be VERIFIED, got: {result.status}"
@@ -161,7 +161,7 @@ def test_fixture_g_out_of_domain_hallucination(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_h_neutral_entailment_coverage_independence(llm_model: str):
+def test_fixture_h_neutral_entailment_coverage_independence(llm_model: str, api_base: str | None = None):
     """T-41: Vague claim about 'expectations' against specific source — UNVERIFIABLE or VERIFIED acceptable.
 
     Tests that Neutral entailment maps to UNVERIFIABLE regardless of coverage,
@@ -173,7 +173,7 @@ def test_fixture_h_neutral_entailment_coverage_independence(llm_model: str):
         source_id="report.pdf"
     )]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.status in ("UNVERIFIABLE", "VERIFIED"), (
         f"Expected UNVERIFIABLE or VERIFIED for vague claim, got: {result.status}"
@@ -185,7 +185,7 @@ def test_fixture_h_neutral_entailment_coverage_independence(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_i_valid_inferential_synthesis(llm_model: str):
+def test_fixture_i_valid_inferential_synthesis(llm_model: str, api_base: str | None = None):
     """T-42: Inferential claim derivable from multiple data points should be VERIFIED or UNVERIFIABLE.
 
     The claim uses probabilistic language ('likely on track') — a conservative LLM may return
@@ -198,7 +198,7 @@ def test_fixture_i_valid_inferential_synthesis(llm_model: str):
         source_id="report.pdf"
     )]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.verification_method == "tier3_llm"
     assert result.status in ("VERIFIED", "UNVERIFIABLE"), (
@@ -211,7 +211,7 @@ def test_fixture_i_valid_inferential_synthesis(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_j_multi_hop_math(llm_model: str):
+def test_fixture_j_multi_hop_math(llm_model: str, api_base: str | None = None):
     """T-43: Claim requiring arithmetic (Q1 + Q2 = H1 total) should be VERIFIED."""
     claim = "Total H1 revenue was $15 million."
     sources = [Source(
@@ -219,7 +219,7 @@ def test_fixture_j_multi_hop_math(llm_model: str):
         source_id="report.pdf"
     )]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.status in ("VERIFIED", "UNVERIFIABLE"), (
         f"Multi-hop arithmetic ($5M + $10M = $15M) — VERIFIED expected but UNVERIFIABLE is conservative-ok, got: {result.status}"
@@ -234,7 +234,7 @@ def test_fixture_j_multi_hop_math(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_k_flawed_inferential_logic(llm_model: str):
+def test_fixture_k_flawed_inferential_logic(llm_model: str, api_base: str | None = None):
     """T-44: Claim of improved profitability contradicted by source showing net loss should be CONTRADICTED."""
     claim = "Profitability improved in Q3."
     sources = [Source(
@@ -242,7 +242,7 @@ def test_fixture_k_flawed_inferential_logic(llm_model: str):
         source_id="report.pdf"
     )]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.status == "CONTRADICTED"
 
@@ -253,7 +253,7 @@ def test_fixture_k_flawed_inferential_logic(llm_model: str):
 
 @pytest.mark.llm
 @pytest.mark.timeout(300)
-def test_fixture_l_needle_in_haystack(llm_model: str):
+def test_fixture_l_needle_in_haystack(llm_model: str, api_base: str | None = None):
     """T-45: Contradicting sentence buried in 8000+ char source should be found — result CONTRADICTED."""
     padding = "The company operates in multiple sectors. " * 200  # ~8200 chars
     contradicting = "The Q3 net profit was negative, with a loss of $2 million."
@@ -261,7 +261,7 @@ def test_fixture_l_needle_in_haystack(llm_model: str):
     claim = "The company reported a profit of $2 million in Q3."
     sources = [Source(content=source_content, source_id="report.pdf")]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.status == "CONTRADICTED"
 
@@ -272,7 +272,7 @@ def test_fixture_l_needle_in_haystack(llm_model: str):
 
 @pytest.mark.llm
 @pytest.mark.timeout(300)
-async def test_fixture_m_batch_scale(llm_model: str):
+async def test_fixture_m_batch_scale(llm_model: str, api_base: str | None = None):
     """T-46: Batch of 5 identical-structure claims should all complete without uncaught exceptions.
 
     Runs as a native async test (pytest-asyncio) so the timeout can interrupt the event loop
@@ -290,7 +290,7 @@ async def test_fixture_m_batch_scale(llm_model: str):
         for i in range(1, 6)
     ]
 
-    results = await verify_batch_async(inputs=inputs, model=llm_model, max_concurrency=3, max_spend=5.0)
+    results = await verify_batch_async(inputs=inputs, model=llm_model, max_concurrency=3, max_spend=5.0, api_base=api_base)
 
     assert len(results) == 5
     for result in results:
@@ -304,7 +304,7 @@ async def test_fixture_m_batch_scale(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_n_tier1_pass_pipeline_continues(llm_model: str):
+def test_fixture_n_tier1_pass_pipeline_continues(llm_model: str, api_base: str | None = None):
     """T-47: Valid agent_provided_evidence should pass Tier 1 gate; pipeline continues to produce a result.
 
     Tier 1 is gate-only — it never produces a terminal result. The verification
@@ -321,7 +321,8 @@ def test_fixture_n_tier1_pass_pipeline_continues(llm_model: str):
         claim=claim,
         sources=sources,
         agent_provided_evidence=agent_evidence,
-        model=llm_model
+        model=llm_model,
+        api_base=api_base,
     )
 
     assert result.status in ("VERIFIED", "UNVERIFIABLE")
@@ -335,7 +336,7 @@ def test_fixture_n_tier1_pass_pipeline_continues(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_o_tier1_failure_hallucinated_evidence_error(llm_model: str):
+def test_fixture_o_tier1_failure_hallucinated_evidence_error(llm_model: str, api_base: str | None = None):
     """T-48: Fabricated agent_provided_evidence not found in source should raise HallucinatedEvidenceError."""
     claim = "Revenue was $5 million."
     agent_evidence = "profits skyrocketed to $50 billion"  # fabricated — not in source
@@ -346,7 +347,8 @@ def test_fixture_o_tier1_failure_hallucinated_evidence_error(llm_model: str):
             claim=claim,
             sources=sources,
             agent_provided_evidence=agent_evidence,
-            model=llm_model
+            model=llm_model,
+            api_base=api_base,
         )
 
 
@@ -355,7 +357,7 @@ def test_fixture_o_tier1_failure_hallucinated_evidence_error(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_p_cross_source_synthesis(llm_model: str):
+def test_fixture_p_cross_source_synthesis(llm_model: str, api_base: str | None = None):
     """T-49: Cross-source arithmetic claim ($3M + $5M = $8M) should be VERIFIED or UNVERIFIABLE.
 
     CONTRADICTED is the wrong answer here — the arithmetic is correct. However some LLMs
@@ -369,7 +371,7 @@ def test_fixture_p_cross_source_synthesis(llm_model: str):
         Source(content="Q2 revenue was $5 million.", source_id="q2_report.pdf"),
     ]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.status in ("VERIFIED", "UNVERIFIABLE"), (
         f"Cross-source arithmetic ($3M + $5M = $8M) must not be CONTRADICTED, got: {result.status}"
@@ -387,7 +389,7 @@ def test_fixture_p_cross_source_synthesis(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_q_cross_source_contradiction(llm_model: str):
+def test_fixture_q_cross_source_contradiction(llm_model: str, api_base: str | None = None):
     """T-50: Claim of 90-day terms contradicted by both sources (60 and 30 days) should be CONTRADICTED."""
     claim = "The payment terms are 90 days."
     sources = [
@@ -401,7 +403,7 @@ def test_fixture_q_cross_source_contradiction(llm_model: str):
         ),
     ]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.status == "CONTRADICTED"
 
@@ -411,7 +413,7 @@ def test_fixture_q_cross_source_contradiction(llm_model: str):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-def test_fixture_r_branch_b_partial_match(llm_model: str):
+def test_fixture_r_branch_b_partial_match(llm_model: str, api_base: str | None = None):
     """T-51: Partial-match claim should go through LLM (Branch B) and be VERIFIED or UNVERIFIABLE."""
     claim = "Quarterly revenue showed improvement."
     sources = [Source(
@@ -419,7 +421,7 @@ def test_fixture_r_branch_b_partial_match(llm_model: str):
         source_id="report.pdf"
     )]
 
-    result = verify(claim=claim, sources=sources, model=llm_model)
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.verification_method == "tier3_llm", (
         "Partial-match claim should go through Tier 3 LLM, not the lexical pass"

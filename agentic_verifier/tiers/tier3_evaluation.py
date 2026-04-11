@@ -175,6 +175,8 @@ def evaluate(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3ResponseMode
             "response_format": Tier3ResponseModel,
             "temperature": temperature,
         }
+        if ctx.api_base:
+            base_kwargs["api_base"] = ctx.api_base
         call_kwargs = adapter.build_kwargs(base_kwargs)
         response = _completion_with_backoff(**call_kwargs)
         try:
@@ -220,6 +222,8 @@ async def evaluate_async(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3
             "response_format": Tier3ResponseModel,
             "temperature": temperature,
         }
+        if ctx.api_base:
+            base_kwargs["api_base"] = ctx.api_base
         call_kwargs = adapter.build_kwargs(base_kwargs)
         response = await _acompletion_with_backoff(**call_kwargs)
         try:

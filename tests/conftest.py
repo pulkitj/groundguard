@@ -82,7 +82,7 @@ def loader_fixtures():
 
     if not docx_path.exists():
         try:
-            from docx import Document
+            from docx import Document  # type: ignore[import-not-found]
             doc = Document()
             doc.add_paragraph("Sample fixture content for agentic-verifier loaders tests.")
             doc.save(str(docx_path))
@@ -162,7 +162,9 @@ def compat_model(request: pytest.FixtureRequest) -> CompatModel:
     if model.model_str.startswith(("ollama/", "ollama_chat/")):
         tag = model.model_str.split("/", 1)[1]
         pulled = _ollama_pulled_models()
-        if pulled and tag not in pulled:
+        if not pulled:
+            pytest.skip(f"Skipped — Ollama not running or unreachable (start with: ollama serve)")
+        if tag not in pulled:
             pytest.skip(f"Skipped — {tag} not pulled in local Ollama (run: ollama pull {tag})")
         # Unload previous model if switching to a different one
         if _current_ollama_model and _current_ollama_model[0] != tag:
