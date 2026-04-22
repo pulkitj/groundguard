@@ -1,0 +1,11 @@
+# Python virtual environments
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Warp AI context (local only)
+.warp/
