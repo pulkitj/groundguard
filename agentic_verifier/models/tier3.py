@@ -45,7 +45,7 @@ class AtomicVerification(BaseModel):
     status: Literal["VERIFIED", "CONTRADICTED", "UNVERIFIABLE"]
     source_id: str | None = None
     source_excerpt: str | None = None
-    reasoning_basis: str | None = None
+    reasoning_basis: list[str] | None = None  # FIX-04: PRD specifies list[str], not str
 
 
 class SourceAttribution(BaseModel):

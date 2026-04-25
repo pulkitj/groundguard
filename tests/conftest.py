@@ -123,13 +123,24 @@ def _ollama_pulled_models() -> set[str]:
 
 
 def _ollama_unload(tag: str) -> None:
-    """Unload a model from Ollama VRAM by setting keep_alive=0."""
+    """
+    Unload a model from Ollama VRAM by setting keep_alive=0.
+
+    BUG-04: Uses /api/generate (not /api/chat). /api/chat requires a
+    'messages' field and returns 400 without it, silently failing the
+    unload. /api/generate accepts a bare {model, prompt, keep_alive}
+    payload.
+    """
     try:
         import urllib.request
         import json
-        payload = json.dumps({"model": tag, "keep_alive": 0}).encode()
+        payload = json.dumps({
+            "model": tag,
+            "prompt": "",
+            "keep_alive": 0,
+        }).encode()
         req = urllib.request.Request(
-            "http://localhost:11434/api/chat",
+            "http://localhost:11434/api/generate",
             data=payload,
             headers={"Content-Type": "application/json"},
             method="POST",

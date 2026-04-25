@@ -92,26 +92,29 @@ def test_ollama_post_process_none_content_json_fallback():
     assert result == '{"valid": "json"}'
 
 
-def test_ollama_post_process_none_content_non_json_reasoning_raises():
+def test_ollama_post_process_none_content_non_json_reasoning_returns_empty():
+    """BUG-02: non-JSON reasoning_content returns '' so Tier 3 retry loop handles it."""
     response = _make_response(None, reasoning_content="Let me think...")
-    with pytest.raises(VerificationFailedError):
-        OLLAMA_ADAPTER.post_process(response)
+    result = OLLAMA_ADAPTER.post_process(response)
+    assert result == ""
 
 
-def test_ollama_post_process_no_closing_think_tag_raises():
+def test_ollama_post_process_no_closing_think_tag_returns_empty():
+    """BUG-02: unclosed <think> tag returns '' (model hit max_tokens mid-thought)."""
     response = _make_response("<think>incomplete reasoning with no closing tag")
-    with pytest.raises(VerificationFailedError):
-        OLLAMA_ADAPTER.post_process(response)
+    result = OLLAMA_ADAPTER.post_process(response)
+    assert result == ""
 
 
 # ---------------------------------------------------------------------------
 # GOOGLE_ADAPTER.post_process tests
 # ---------------------------------------------------------------------------
 
-def test_google_post_process_none_content_raises():
+def test_google_post_process_none_content_returns_empty():
+    """BUG-02: empty Gemini content returns '' so Tier 3 retry loop handles it."""
     response = _make_response(None)
-    with pytest.raises(VerificationFailedError):
-        GOOGLE_ADAPTER.post_process(response)
+    result = GOOGLE_ADAPTER.post_process(response)
+    assert result == ""
 
 
 # ---------------------------------------------------------------------------
@@ -179,3 +182,34 @@ def test_json_object_adapter_sets_response_format():
     base = {"model": "nvidia_nim/microsoft/phi-4-mini-instruct", "response_format": {"type": "json_schema"}}
     result = JSON_OBJECT_ADAPTER.build_kwargs(base)
     assert result["response_format"] == {"type": "json_object"}
+
+
+# ---------------------------------------------------------------------------
+# BUG-01: _strip_fences handles conversational pre/post-text
+# ---------------------------------------------------------------------------
+
+def test_strip_fences_handles_conversational_pretext():
+    """BUG-01: fence preceded by conversational text is still extracted."""
+    from agentic_verifier.adapters.registry import _strip_fences
+    content = 'Here is the JSON output:\n```json\n{"key": "value"}\n```\nLet me know if helpful!'
+    assert _strip_fences(content) == '{"key": "value"}'
+
+
+def test_strip_fences_handles_posttext_only():
+    """BUG-01: fence followed by conversational text is still extracted."""
+    from agentic_verifier.adapters.registry import _strip_fences
+    content = '```json\n{"key": "value"}\n```\nThat covers all five parts.'
+    assert _strip_fences(content) == '{"key": "value"}'
+
+
+def test_strip_fences_no_fence_returns_content():
+    """BUG-01: plain JSON without fences is returned as-is."""
+    from agentic_verifier.adapters.registry import _strip_fences
+    assert _strip_fences('{"key": "value"}') == '{"key": "value"}'
+
+
+def test_strip_fences_non_json_fence_falls_through():
+    """BUG-01: fenced non-JSON content falls through to raw content (not stripped to code)."""
+    from agentic_verifier.adapters.registry import _strip_fences
+    result = _strip_fences('```python\nprint("hello")\n```')
+    assert not result.startswith('print')

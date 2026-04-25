@@ -272,6 +272,29 @@ def test_parse_response_choices_empty_raises_descriptively(mocker):
 # T-66 — exponential backoff for transient LiteLLM errors
 # ---------------------------------------------------------------------------
 
+async def test_evaluate_async_exhausts_all_backoff_attempts(mocker):
+    """BUG-03: evaluate_async retries _BACKOFF_MAX_ATTEMPTS times before re-raising."""
+    from unittest.mock import AsyncMock
+    import litellm
+    from agentic_verifier.tiers.tier3_evaluation import evaluate_async, _BACKOFF_MAX_ATTEMPTS
+
+    call_count = [0]
+
+    async def always_fail(**kwargs):
+        call_count[0] += 1
+        raise litellm.ServiceUnavailableError(
+            message="Service unavailable", llm_provider="test", model="test"
+        )
+
+    mocker.patch("litellm.acompletion", side_effect=always_fail)
+    mocker.patch("asyncio.sleep", new_callable=AsyncMock)
+
+    with pytest.raises(litellm.ServiceUnavailableError):
+        await evaluate_async(_make_ctx(), _make_chunks())
+
+    assert call_count[0] == _BACKOFF_MAX_ATTEMPTS
+
+
 async def test_evaluate_async_retries_on_transient_error(mocker):
     """T-66: evaluate_async retries transient errors with exponential backoff."""
     from unittest.mock import AsyncMock, MagicMock

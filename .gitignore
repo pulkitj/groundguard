@@ -9,3 +9,20 @@ __pycache__/
 
 # Warp AI context (local only)
 .warp/
+
+#temp folders and files
+.claude/
+/code_diff_utf8.patch
+/code_diff.patch
+/codebase_analysis.md
+/commit_ad624d4.txt
+/diff.patch
+/progress.json
+
+# Planning documents
+plan/
+docs/superpowers/
+
+# code review graph
+temp_code_review_graph/
+.code-review-graph/

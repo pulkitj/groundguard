@@ -10,6 +10,94 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+<!-- code-review-graph MCP tools -->
+## MCP Tools: code-review-graph
+
+**IMPORTANT: This project has a knowledge graph. ALWAYS use the
+code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
+the codebase.** The graph is faster, cheaper (fewer tokens), and gives
+you structural context (callers, dependents, test coverage) that file
+scanning cannot.
+
+### When to use graph tools FIRST
+
+- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
+- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
+- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
+- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
+- **Architecture questions**: `get_architecture_overview` + `list_communities`
+
+Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
+
+### Key Tools
+
+| Tool | Use when |
+|------|----------|
+| `detect_changes` | Reviewing code changes — gives risk-scored analysis |
+| `get_review_context` | Need source snippets for review — token-efficient |
+| `get_impact_radius` | Understanding blast radius of a change |
+| `get_affected_flows` | Finding which execution paths are impacted |
+| `query_graph` | Tracing callers, callees, imports, tests, dependencies |
+| `semantic_search_nodes` | Finding functions/classes by name or keyword |
+| `get_architecture_overview` | Understanding high-level codebase structure |
+| `refactor_tool` | Planning renames, finding dead code |
+
+### Workflow
+
+1. The graph auto-updates on file changes (via hooks).
+2. Use `detect_changes` for code review.
+3. Use `get_affected_flows` to understand impact.
+4. Use `query_graph` pattern="tests_for" to check coverage.
+
+---
+
+## Token Efficiency Protocols
+
+### Before reading any file
+
+Check `CODEBASE_ANALYSIS.md` (same directory as this file) first.
+It contains the full dependency graph, module contracts, implementation
+status, and red flags. Read it instead of source files to orient yourself.
+Only read a source file when you are about to act on it.
+
+### Native tool rules
+
+- **Read tool:** State which file and which section before reading.
+  Use line ranges when the section is known. If already read this
+  session, use what is in context — do not re-read.
+- **Grep tool:** Use `output_mode: "files_with_matches"` first.
+  Only switch to content mode when you need the actual lines.
+- **Agent tool:** Only spawn agents when: single named role, all
+  context injected inline, mutually exclusive file scope.
+
+### Bash command rules
+
+Always use the quiet flags below. Never use the verbose form.
+
+```
+pytest (fast suite)  →  pytest -m "not llm and not loaders and not langchain" -x -q --tb=short --no-header
+pytest (single test) →  pytest <test_path> -x -q --tb=short
+pytest (compat)      →  pytest -m compat -v --timeout=300 -p no:cov
+pytest (llm)         →  pytest -m llm --timeout=120 -q
+pip install          →  pip install -q -e ".[dev,loaders,langchain]"
+git log              →  git log --oneline -10
+git diff             →  git diff --stat
+git status           →  git status -s
+grep                 →  grep -rn "term" . | head -20
+find                 →  find . -name "*.py" | grep -v __pycache__ | head -20
+```
+
+### Document updates after a discussion
+
+Do NOT immediately read all plan documents.
+
+1. Extract decisions from the conversation (they are already in context)
+2. Run `grep -n "^#" <filename>` to get section headings cheaply
+3. Read only the specific sections that need updating
+4. Edit targeted sections — never rewrite whole documents
+
+---
+
 ## Commands
 
 ```bash

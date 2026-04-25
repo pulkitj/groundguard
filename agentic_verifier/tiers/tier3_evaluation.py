@@ -18,11 +18,11 @@ if TYPE_CHECKING:
     from agentic_verifier.loaders.chunker import Chunk
 
 
-TRANSIENT_LITELLM_ERRORS = (
-    litellm.ServiceUnavailableError,
-    litellm.RateLimitError,
-    litellm.exceptions.APIConnectionError,
-)
+from agentic_verifier._constants import TRANSIENT_LITELLM_ERRORS  # FIX-02: unified tuple (adds Timeout)
+
+# BUG-03: 5 attempts gives max cumulative backoff of 1+2+4+8 = 15s,
+# which covers typical cloud rate-limit reset windows.
+_BACKOFF_MAX_ATTEMPTS = 5
 
 
 TIER3_PROMPT_TEMPLATE = """\
@@ -85,15 +85,15 @@ Generate a JSON object with a five-part analysis:
 async def _acompletion_with_backoff(**kwargs) -> Any:
     """Wraps litellm.acompletion with exponential backoff for transient errors."""
     delay = 1.0
-    for attempt in range(3):
+    for attempt in range(_BACKOFF_MAX_ATTEMPTS):
         try:
             return await litellm.acompletion(**kwargs)
         except TRANSIENT_LITELLM_ERRORS as e:
-            if attempt == 2:
+            if attempt == _BACKOFF_MAX_ATTEMPTS - 1:
                 raise
             logger.warning(
-                "Tier 3 transient error (%s) — backoff %.0fs before retry %d/3",
-                type(e).__name__, delay, attempt + 2,
+                "Tier 3 transient error (%s) — backoff %.0fs before retry %d/%d",
+                type(e).__name__, delay, attempt + 2, _BACKOFF_MAX_ATTEMPTS,
             )
             await asyncio.sleep(delay)
             delay = min(delay * 2, 30.0)
@@ -102,15 +102,15 @@ async def _acompletion_with_backoff(**kwargs) -> Any:
 def _completion_with_backoff(**kwargs) -> Any:
     """Wraps litellm.completion with exponential backoff for transient errors."""
     delay = 1.0
-    for attempt in range(3):
+    for attempt in range(_BACKOFF_MAX_ATTEMPTS):
         try:
             return litellm.completion(**kwargs)
         except TRANSIENT_LITELLM_ERRORS as e:
-            if attempt == 2:
+            if attempt == _BACKOFF_MAX_ATTEMPTS - 1:
                 raise
             logger.warning(
-                "Tier 3 transient error (%s) — backoff %.0fs before retry %d/3",
-                type(e).__name__, delay, attempt + 2,
+                "Tier 3 transient error (%s) — backoff %.0fs before retry %d/%d",
+                type(e).__name__, delay, attempt + 2, _BACKOFF_MAX_ATTEMPTS,
             )
             time.sleep(delay)
             delay = min(delay * 2, 30.0)

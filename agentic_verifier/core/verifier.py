@@ -24,12 +24,7 @@ from agentic_verifier.models.internal import (
 from agentic_verifier.models.result import VerificationResult
 from agentic_verifier.tiers import tier1_authenticity, tier2_semantic, tier3_evaluation
 
-TRANSIENT_LITELLM_ERRORS = (
-    litellm.exceptions.ServiceUnavailableError,
-    litellm.exceptions.RateLimitError,
-    litellm.exceptions.APIConnectionError,
-    litellm.exceptions.Timeout,
-)
+from agentic_verifier._constants import TRANSIENT_LITELLM_ERRORS  # FIX-02: unified tuple
 
 
 def verify(

@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from rank_bm25 import BM25Okapi  # noqa: F401
-
 if TYPE_CHECKING:
     from agentic_verifier.models.internal import VerificationContext
     from agentic_verifier.models.result import Source

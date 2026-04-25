@@ -4,16 +4,29 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from agentic_verifier._log import logger
 from agentic_verifier.exceptions import VerificationFailedError
 
 _THINK_TAG_RE = re.compile(r'<think>.*?</think>', re.DOTALL | re.IGNORECASE)
-_MD_FENCE_RE = re.compile(r'^\s*```(?:json)?\s*\n?(.*?)\n?\s*```\s*$', re.DOTALL)
+# BUG-01: unanchored search so conversational pre/post-text is ignored.
+# Only extract if the fenced content looks like JSON ({...} or [...]).
+_MD_FENCE_RE = re.compile(r'```(?:json)?\s*\n?(.*?)\n?\s*```', re.DOTALL)
 
 
 def _strip_fences(content: str) -> str:
-    """Strip markdown code fences and surrounding whitespace."""
-    m = _MD_FENCE_RE.match(content)
-    return m.group(1).strip() if m else content.strip()
+    """Strip markdown code fences and surrounding whitespace.
+
+    Uses unanchored search so conversational text before/after the fence
+    does not prevent extraction. Only returns the fenced content when it
+    looks like JSON (starts with '{' or '['); otherwise falls through to
+    return the original content stripped.
+    """
+    m = _MD_FENCE_RE.search(content)
+    if m:
+        extracted = m.group(1).strip()
+        if extracted.startswith('{') or extracted.startswith('['):
+            return extracted
+    return content.strip()
 
 
 def _strip_think_tags(content: str) -> str:
@@ -127,10 +140,13 @@ def _ollama_post_process(response: Any, model: str = "") -> str:
         if fallback.startswith('{'):
             content = fallback
         else:
-            raise VerificationFailedError(
-                "Ollama returned empty content and reasoning_content does not contain JSON. "
-                "The model may have failed to generate structured output."
+            # BUG-02: return "" instead of raising so Tier 3 retry loop catches it
+            # (ValidationError on empty string) and retries rather than propagating.
+            logger.warning(
+                "Ollama returned empty content and reasoning_content has no JSON — "
+                "returning empty string for retry"
             )
+            return ""
     return _strip_fences(content)
 
 
@@ -211,9 +227,12 @@ ANTHROPIC_ADAPTER = ModelAdapter(
 def _google_post_process(response: Any, model: str = "") -> str:
     content = response.choices[0].message.content
     if not content:
-        raise VerificationFailedError(
-            "Gemini returned empty content — safety filter may have blocked this response."
+        # BUG-02: return "" instead of raising so Tier 3 retry loop retries.
+        logger.warning(
+            "Gemini returned empty content (possible safety filter) — "
+            "returning empty string for retry"
         )
+        return ""
     return _strip_fences(content)
 
 
