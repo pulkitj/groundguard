@@ -296,3 +296,142 @@ def test_log_levels_by_scenario(scenario, mocker, caplog):
         assert any("PARSE_ERROR" in msg for msg in error_msgs), (
             f"Expected an ERROR record containing 'PARSE_ERROR', got: {error_msgs}"
         )
+
+
+# ---------------------------------------------------------------------------
+# T-108 — Structured extra={} fields in log records
+# ---------------------------------------------------------------------------
+
+def _mock_tier3_result_t108(status: str):
+    from groundguard.models.tier3 import (
+        Tier3ResponseModel, TextualEntailment, ConceptualCoverage,
+        AtomicVerification, SourceAttribution,
+    )
+    return Tier3ResponseModel(
+        textual_entailment=TextualEntailment(label="Entailment", probability=0.95),
+        conceptual_coverage=ConceptualCoverage(
+            percentage=90.0, covered_concepts=["x"], missing_concepts=[]
+        ),
+        factual_consistency_score=90.0,
+        verifications=[AtomicVerification(claim_text="x", status=status, source_id="s1")],
+        source_attributions=[SourceAttribution(source_id="s1", role="Supporting")],
+        overall_verdict="Supported.",
+    )
+
+
+def _mock_grounding_result_t108(status: str):
+    from groundguard.models.result import GroundingResult
+    return GroundingResult(
+        is_grounded=(status == "GROUNDED"),
+        score=0.9,
+        status=status,
+        evaluation_method="sentence_entailment",
+    )
+
+
+def _mock_bm25_t108(score: float):
+    m = MagicMock()
+    m.get_scores.return_value = [score]
+    return m
+
+
+def test_t108_verify_emits_info_on_completion(mocker, caplog):
+    from groundguard.core.verifier import verify
+    from groundguard.models.result import Source
+    mocker.patch("groundguard.tiers.tier3_evaluation.evaluate",
+                 return_value=_mock_tier3_result_t108("VERIFIED"))
+    with caplog.at_level(logging.INFO, logger="groundguard"):
+        verify("x", [Source(source_id="s1", content="x")], model="gpt-4o-mini")
+    records = [r for r in caplog.records if "completion" in r.getMessage().lower()
+               or hasattr(r, "verdict")]
+    assert len(records) >= 1
+
+
+def test_t108_tier25_fast_exit_emits_info(mocker, caplog):
+    from groundguard.core.verifier import verify
+    from groundguard.models.result import Source
+    src = Source(source_id="s1", content="The fee shall not exceed 30% of revenue.")
+    with caplog.at_level(logging.INFO, logger="groundguard"):
+        verify("The fee shall not exceed 300% of revenue.", [src], model="gpt-4o-mini")
+    assert any("tier25" in r.getMessage().lower() or
+               getattr(r, "verification_method", "") == "tier25_numerical"
+               for r in caplog.records)
+
+
+def test_t108_log_records_contain_no_claim_text(mocker, caplog):
+    from groundguard.core.verifier import verify
+    from groundguard.models.result import Source
+    mocker.patch("groundguard.tiers.tier3_evaluation.evaluate",
+                 return_value=_mock_tier3_result_t108("VERIFIED"))
+    claim = "UNIQUE_CLAIM_SENTINEL_DO_NOT_LOG"
+    src = Source(source_id="s1", content="UNIQUE_SOURCE_SENTINEL_DO_NOT_LOG")
+    with caplog.at_level(logging.DEBUG, logger="groundguard"):
+        verify(claim, [src], model="gpt-4o-mini")
+    for record in caplog.records:
+        assert claim not in record.getMessage()
+        assert "UNIQUE_SOURCE_SENTINEL" not in record.getMessage()
+
+
+def test_t108_retry_emits_warning(mocker, caplog):
+    import pydantic
+    call_count = [0]
+
+    def flaky(*args, **kwargs):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise pydantic.ValidationError.from_exception_data("M", [])
+        return _mock_tier3_result_t108("VERIFIED")
+
+    mocker.patch("groundguard.tiers.tier3_evaluation._completion_with_backoff",
+                 side_effect=flaky)
+    from groundguard.core.verifier import verify
+    from groundguard.models.result import Source
+    with caplog.at_level(logging.WARNING, logger="groundguard"):
+        verify("x", [Source(source_id="s1", content="x")], model="gpt-4o-mini")
+    assert any(r.levelno == logging.WARNING for r in caplog.records)
+
+
+def test_t108_bm25_fast_path_emits_completion_log(mocker, caplog):
+    from groundguard.core.verifier import verify
+    from groundguard.models.result import Source
+    mocker.patch("groundguard.tiers.tier2_semantic.BM25Okapi",
+                 return_value=_mock_bm25_t108(score=0.95))
+    with caplog.at_level(logging.INFO, logger="groundguard"):
+        verify("x", [Source(source_id="s1", content="x")], model="gpt-4o-mini")
+    assert any(getattr(r, "verification_method", "") == "tier2_lexical"
+               or "tier2_lexical" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_t108_tier25_exit_emits_completion_log(mocker, caplog):
+    from groundguard.core.verifier import verify
+    from groundguard.models.result import Source
+    src = Source(source_id="s1", content="The penalty shall not exceed 10% of revenue.")
+    with caplog.at_level(logging.INFO, logger="groundguard"):
+        verify("The penalty shall not exceed 200% of revenue.", [src], model="gpt-4o-mini")
+    assert any(getattr(r, "numerical_fast_exit", False) is True
+               or "tier25" in r.getMessage().lower()
+               for r in caplog.records)
+
+
+def test_t108_llm_path_emits_completion_log_with_boundary_id(mocker, caplog):
+    from groundguard.core.verifier import verify
+    from groundguard.models.result import Source
+    mocker.patch("groundguard.tiers.tier3_evaluation.evaluate",
+                 return_value=_mock_tier3_result_t108("VERIFIED"))
+    with caplog.at_level(logging.INFO, logger="groundguard"):
+        verify("x", [Source(source_id="s1", content="x")], model="gpt-4o-mini")
+    completion_records = [r for r in caplog.records
+                          if hasattr(r, "boundary_id") and hasattr(r, "verdict")]
+    assert len(completion_records) >= 1
+
+
+def test_t108_verify_answer_emits_completion_log(mocker, caplog):
+    from groundguard.core.verifier import verify_answer
+    from groundguard.models.result import Source
+    mocker.patch("groundguard.tiers.tier3_evaluation.evaluate_faithfulness",
+                 return_value=_mock_grounding_result_t108("GROUNDED"))
+    with caplog.at_level(logging.INFO, logger="groundguard"):
+        verify_answer("x", [Source(source_id="s1", content="x")], model="gpt-4o-mini")
+    assert any(hasattr(r, "boundary_id") and hasattr(r, "score")
+               for r in caplog.records)

@@ -71,6 +71,17 @@ def verify(
         top_k_chunks=profile.bm25_top_k,
     )
 
+    logger.debug(
+        "verify() entry [boundary=%s]",
+        ctx._boundary_id,
+        extra={
+            "boundary_id": ctx._boundary_id,
+            "model": model,
+            "source_count": len(sources),
+            "claim_length_chars": len(claim),
+        },
+    )
+
     ctx.tier0_atoms = classifier.parse_and_classify(claim)
     if ctx.auto_chunk:
         chunks = chunker.chunk_sources(ctx)
@@ -81,6 +92,17 @@ def verify(
     if tier25_result.has_conflict:
         atomic = CoreResultBuilder.build_numerical_fast_exit(
             claim, tier25_result, ctx.original_sources[0]
+        )
+        logger.info(
+            "verify() completion tier25 fast exit [boundary=%s]",
+            ctx._boundary_id,
+            extra={
+                "boundary_id": ctx._boundary_id,
+                "verdict": "CONTRADICTED",
+                "verification_method": "tier25_numerical",
+                "cost_usd": ctx.cost_tracker.total_cost_usd,
+                "numerical_fast_exit": True,
+            },
         )
         return VerificationResult(
             is_valid=False,
@@ -105,11 +127,15 @@ def verify(
     if t2_res.decision == RoutingDecision.SKIP_LLM_HIGH_CONFIDENCE:
         result = ResultBuilder.build_lexical_pass(ctx, t2_res.top_k_chunks)
         logger.info(
-            "verify(): status=%s method=%s cost=$%.4f [boundary=%s]",
-            result.status,
-            result.verification_method,
-            ctx.cost_tracker.total_cost_usd,
+            "verify() completion [boundary=%s]",
             ctx._boundary_id,
+            extra={
+                "boundary_id": ctx._boundary_id,
+                "verdict": result.status,
+                "verification_method": result.verification_method,
+                "cost_usd": ctx.cost_tracker.total_cost_usd,
+                "numerical_fast_exit": False,
+            },
         )
         return result
 
@@ -141,11 +167,15 @@ def verify(
 
     result = ResultBuilder.build_llm_result(ctx, t3_model, "tier3_llm")
     logger.info(
-        "verify(): status=%s method=%s cost=$%.4f [boundary=%s]",
-        result.status,
-        result.verification_method,
-        ctx.cost_tracker.total_cost_usd,
+        "verify() completion [boundary=%s]",
         ctx._boundary_id,
+        extra={
+            "boundary_id": ctx._boundary_id,
+            "verdict": result.status,
+            "verification_method": result.verification_method,
+            "cost_usd": ctx.cost_tracker.total_cost_usd,
+            "numerical_fast_exit": False,
+        },
     )
     return result
 
@@ -562,29 +592,47 @@ def verify_answer(
             audit_records.append(rec)
         if is_tie:
             audit_records[0].tie_broken = True
-            return GroundingResult(
+            gr = GroundingResult(
                 is_grounded=False,
                 score=min(r.score for r in results),
                 status="NOT_GROUNDED",
                 evaluation_method="sentence_entailment",
                 audit_records=audit_records,
             )
+            logger.info(
+                "verify_answer() completion [boundary=%s]",
+                ctx._boundary_id,
+                extra={"boundary_id": ctx._boundary_id, "score": gr.score},
+            )
+            return gr
         winning_result = next(r for r in results if r.status == winner)
-        return GroundingResult(
+        gr = GroundingResult(
             is_grounded=winner == "GROUNDED",
             score=winning_result.score,
             status=winner,
             evaluation_method="sentence_entailment",
             audit_records=audit_records,
         )
+        logger.info(
+            "verify_answer() completion [boundary=%s]",
+            ctx._boundary_id,
+            extra={"boundary_id": ctx._boundary_id, "score": gr.score},
+        )
+        return gr
 
     is_grounded = result.is_grounded and result.score >= threshold
-    return GroundingResult(
+    gr = GroundingResult(
         is_grounded=is_grounded,
         score=result.score,
         status=result.status if not is_grounded else "GROUNDED",
         evaluation_method=result.evaluation_method,
     )
+    logger.info(
+        "verify_answer() completion [boundary=%s]",
+        ctx._boundary_id,
+        extra={"boundary_id": ctx._boundary_id, "score": gr.score},
+    )
+    return gr
 
 
 async def averify_answer(

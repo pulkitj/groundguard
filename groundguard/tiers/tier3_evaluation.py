@@ -146,6 +146,8 @@ def parse_response(response, model: str) -> Tier3ResponseModel:
     Primary: uses response.choices[0].message.parsed if available.
     Fallback: adapter post_process extracts and normalizes content string.
     """
+    if isinstance(response, Tier3ResponseModel):
+        return response
     parsed = getattr(response.choices[0].message, 'parsed', None)
     if parsed is not None:
         if isinstance(parsed, Tier3ResponseModel):
@@ -178,14 +180,13 @@ def evaluate(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3ResponseMode
         if ctx.api_base:
             base_kwargs["api_base"] = ctx.api_base
         call_kwargs = adapter.build_kwargs(base_kwargs)
-        response = _completion_with_backoff(**call_kwargs)
         try:
-            cost = litellm.completion_cost(completion_response=response)
-        except Exception:
-            cost = 0.0  # unknown model — no pricing data in litellm registry
-        ctx.cost_tracker.add_cost(cost)
-
-        try:
+            response = _completion_with_backoff(**call_kwargs)
+            try:
+                cost = litellm.completion_cost(completion_response=response)
+            except Exception:
+                cost = 0.0  # unknown model — no pricing data in litellm registry
+            ctx.cost_tracker.add_cost(cost)
             return parse_response(response, ctx.model)
         except (pydantic.ValidationError, ValueError, IndexError) as e:
             logger.warning(
