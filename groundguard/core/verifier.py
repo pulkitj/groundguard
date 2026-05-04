@@ -28,6 +28,7 @@ from groundguard.tiers import tier1_authenticity, tier2_semantic, tier3_evaluati
 from groundguard.core.result_builder import ResultBuilder as CoreResultBuilder
 
 from groundguard._constants import TRANSIENT_LITELLM_ERRORS  # FIX-02: unified tuple
+from groundguard.loaders.legal import decompose_clause
 
 
 def verify(
@@ -623,3 +624,73 @@ def verify_structured(
 
     flattened = dict_to_string_flattener(normalised)
     return verify(claim=flattened, sources=sources, **kwargs)
+
+
+def verify_clause(
+    clause_text: str,
+    sources: list,
+    *,
+    term_registry=None,
+    profile=None,
+    model: str = "gpt-4o-mini",
+    max_spend: float = float("inf"),
+    api_base: str | None = None,
+):
+    from groundguard.profiles import STRICT_PROFILE
+    profile = profile or STRICT_PROFILE
+    unit = decompose_clause(clause_text)
+    context_parts = [
+        f"Clause modifiers: {unit.subordinate_modifiers}",
+        f"Obligation type: {unit.modal_operator or 'unknown'}",
+    ]
+    context = "\n".join(context_parts)
+    extra_sources = []
+    if term_registry is not None:
+        for term in unit.defined_terms_referenced:
+            src = term_registry.resolve(term)
+            if src:
+                extra_sources.append(src)
+    return verify(
+        unit.main_proposition,
+        sources + extra_sources,
+        model=model,
+        max_spend=max_spend,
+        api_base=api_base,
+        profile=profile,
+        context=context,
+    )
+
+
+async def averify_clause(
+    clause_text: str,
+    sources: list,
+    *,
+    term_registry=None,
+    profile=None,
+    model: str = "gpt-4o-mini",
+    max_spend: float = float("inf"),
+    api_base: str | None = None,
+):
+    from groundguard.profiles import STRICT_PROFILE
+    profile = profile or STRICT_PROFILE
+    unit = decompose_clause(clause_text)
+    context_parts = [
+        f"Clause modifiers: {unit.subordinate_modifiers}",
+        f"Obligation type: {unit.modal_operator or 'unknown'}",
+    ]
+    context = "\n".join(context_parts)
+    extra_sources = []
+    if term_registry is not None:
+        for term in unit.defined_terms_referenced:
+            src = term_registry.resolve(term)
+            if src:
+                extra_sources.append(src)
+    return await averify(
+        unit.main_proposition,
+        sources + extra_sources,
+        model=model,
+        max_spend=max_spend,
+        api_base=api_base,
+        profile=profile,
+        context=context,
+    )
