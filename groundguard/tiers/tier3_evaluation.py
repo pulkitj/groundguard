@@ -346,6 +346,12 @@ def evaluate_faithfulness(
     content = response.choices[0].message.content
     faithfulness = FaithfulnessResponseModel.model_validate_json(content)
 
+    if len(faithfulness.sentence_results) != len(units):
+        raise ParseError(
+            f"faithfulness response has {len(faithfulness.sentence_results)} results "
+            f"for {len(units)} units"
+        )
+
     # Apply verdict/confidence back to units
     for i, unit in enumerate(units):
         if i < len(faithfulness.sentence_results):

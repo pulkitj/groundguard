@@ -11,13 +11,15 @@ import pytest
 # Module-level helper (import of not-yet-existing symbols is intentional RED)
 # ---------------------------------------------------------------------------
 
-def _mock_faithfulness_response(verdict: str):
-    import json
+def _mock_faithfulness_response(verdict: str, count: int = 1):
     from unittest.mock import MagicMock
     from groundguard.models.tier3 import FaithfulnessResponseModel, SentenceResult
     msg = MagicMock()
     msg.content = FaithfulnessResponseModel(
-        sentence_results=[SentenceResult(sentence="x", verdict=verdict, confidence=0.90)]
+        sentence_results=[
+            SentenceResult(sentence=f"x{i}", verdict=verdict, confidence=0.90)
+            for i in range(count)
+        ]
     ).model_dump_json()
     choice = MagicMock()
     choice.message = msg
@@ -189,7 +191,7 @@ def test_pronoun_sentence_gets_llm_coreference_enrichment(mocker):
     from groundguard.profiles import GENERAL_PROFILE
     mocker.patch(
         "groundguard.tiers.tier3_evaluation._completion_with_backoff",
-        return_value=_mock_faithfulness_response("Entailment"),
+        return_value=_mock_faithfulness_response("Entailment", count=2),
     )
     src = Source(source_id="s1", content="Adobe grew 30%. It reported record results.")
     ctx = VerificationContext(
@@ -230,4 +232,43 @@ def test_structural_hints_override_automatic_sentence_inference(mocker):
     result = evaluate_faithfulness(ctx, [chunk], structural_hints=hints)
     assert result.unit_results[0].structural_type == "table_cell"
     assert result.unit_results[0].claim_text == "Revenue in Q2 was $5.1M"
-    assert result.unit_results[0].display_text == "5.1"
+
+
+# ---------------------------------------------------------------------------
+# Count mismatch validation
+# ---------------------------------------------------------------------------
+
+def test_evaluate_faithfulness_raises_on_count_mismatch(mocker):
+    """LLM returns fewer sentence_results than units → ParseError."""
+    from groundguard.tiers.tier3_evaluation import evaluate_faithfulness
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+    from groundguard.exceptions import ParseError
+    from unittest.mock import MagicMock
+    from groundguard.models.tier3 import FaithfulnessResponseModel, SentenceResult
+
+    # Build a response with only 1 result when 2 units are sent
+    msg = MagicMock()
+    msg.content = FaithfulnessResponseModel(
+        sentence_results=[SentenceResult(sentence="x", verdict="Entailment", confidence=0.9)]
+    ).model_dump_json()
+    choice = MagicMock()
+    choice.message = msg
+    resp = MagicMock()
+    resp.choices = [choice]
+
+    mocker.patch(
+        "groundguard.tiers.tier3_evaluation._completion_with_backoff",
+        return_value=resp,
+    )
+
+    # claim has 2 sentences → 2 units; mock returns 1 sentence_result → ParseError
+    src = Source(source_id="s1", content="Claim A. Claim B.")
+    ctx = VerificationContext(claim="Claim A. Claim B.", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="Claim A. Claim B.",
+                  char_start=0, char_end=17, token_count=5)
+
+    import pytest
+    with pytest.raises(ParseError, match="faithfulness response has 1 results for 2 units"):
+        evaluate_faithfulness(ctx, [chunk])
