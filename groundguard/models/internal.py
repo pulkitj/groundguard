@@ -8,8 +8,10 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from groundguard.loaders.chunker import Chunk
     from groundguard.models.result import Source
+    from groundguard.loaders.legal import TermRegistry
 
 from groundguard.exceptions import VerificationCostExceededError
+from groundguard.profiles import VerificationProfile, GENERAL_PROFILE
 
 
 class SharedCostTracker:
@@ -63,9 +65,10 @@ class VerificationContext:
     Immutable-ish per-call context object passed through the verification pipeline.
     All configuration parameters are set at construction time.
     """
-    claim: str
-    original_sources: list[Source]
-    model: str
+    claim: str  # only required field
+
+    original_sources: list[Source] = field(default_factory=list)
+    model: str = ""
 
     auto_chunk: bool = True
     chunk_size_tokens: int = 500
@@ -87,6 +90,38 @@ class VerificationContext:
     _boundary_id: str = field(default_factory=lambda: secrets.token_hex(6))
 
     tier0_atoms: list[ClassifiedAtom] = field(default_factory=list)
+
+    # New T-81 fields:
+    sources: list[Source] | None = field(default=None)
+    faithfulness_threshold: float | None = None
+    profile: VerificationProfile = field(default_factory=lambda: GENERAL_PROFILE)
+    term_registry: TermRegistry | None = field(default=None)
+    tier25_bundle_size: int = 5
+    majority_vote_on_borderline: bool | None = None
+    majority_vote_confidence_threshold: float = 0.85
+
+    def __post_init__(self):
+        import warnings
+        # sources alias: if caller used sources= instead of original_sources=
+        if self.sources is not None and not self.original_sources:
+            self.original_sources = self.sources
+
+        # Conflict warning: explicit faithfulness_threshold vs profile default
+        if (self.faithfulness_threshold is not None and
+                self.faithfulness_threshold != self.profile.faithfulness_threshold):
+            warnings.warn(
+                f"faithfulness_threshold={self.faithfulness_threshold} conflicts with "
+                f"profile '{self.profile.name}' faithfulness_threshold="
+                f"{self.profile.faithfulness_threshold}. Explicit parameter takes precedence.",
+                UserWarning,
+                stacklevel=3,
+            )
+
+        # Resolve effective faithfulness threshold: explicit > profile default
+        if self.faithfulness_threshold is not None:
+            self._effective_faithfulness_threshold = self.faithfulness_threshold
+        else:
+            self._effective_faithfulness_threshold = self.profile.faithfulness_threshold
 
 
 class RoutingDecision:
