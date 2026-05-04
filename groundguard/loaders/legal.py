@@ -4,6 +4,12 @@ import re
 from dataclasses import dataclass, field
 from groundguard.models.result import Source
 
+_LEGAL_STOPWORDS = frozenset({
+    "This", "That", "These", "Those", "The", "Each", "Any", "All",
+    "Such", "Said", "When", "Where", "Which", "With", "Upon", "After",
+    "Before", "During", "Within", "Without", "Unless", "Until",
+})
+
 
 class PassiveVoiceNormalizer:
     """Converts passive legal voice to active voice."""
@@ -103,10 +109,11 @@ def decompose_clause(text: str) -> StructuredClaimUnit:
         subordinate_modifiers.append(m.group(0).strip())
 
     defined_terms_referenced = []
-    for m in re.finditer(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b', text):
+    for m in re.finditer(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b', text):
         term = m.group(1)
-        if term not in defined_terms_referenced:
-            defined_terms_referenced.append(term)
+        if term not in _LEGAL_STOPWORDS and len(term) >= 4:
+            if term not in defined_terms_referenced:
+                defined_terms_referenced.append(term)
 
     return StructuredClaimUnit(
         main_proposition=active_text,
