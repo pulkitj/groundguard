@@ -24,7 +24,13 @@ def test_load_docx_split_by_heading(loader_fixtures):
     from groundguard.loaders.structured import load_docx
 
     sources = load_docx(str(docx_path), split_by="heading")
-    assert len(sources) >= 2
+    assert len(sources) == 2, f"Expected 2 sections, got {len(sources)}"
+    assert sources[0].source_id == "section_0"
+    assert sources[1].source_id == "section_1"
+    assert "Introduction" in sources[0].content
+    assert "Sample fixture content" in sources[0].content
+    assert "Details" in sources[1].content
+    assert "Additional detail paragraph" in sources[1].content
     for s in sources:
         assert s.source_id
         assert s.content
