@@ -24,7 +24,8 @@ from groundguard.models.internal import (
 from groundguard.core import claim_extractor
 from groundguard.models.result import GroundingResult, VerificationResult
 from groundguard.profiles import GENERAL_PROFILE, VerificationProfile
-from groundguard.tiers import tier1_authenticity, tier2_semantic, tier3_evaluation
+from groundguard.tiers import tier1_authenticity, tier2_semantic, tier3_evaluation, tier25_preprocessing
+from groundguard.core.result_builder import ResultBuilder as CoreResultBuilder
 
 from groundguard._constants import TRANSIENT_LITELLM_ERRORS  # FIX-02: unified tuple
 
@@ -41,6 +42,8 @@ def verify(
     max_spend=0.50,
     agent_provided_evidence=None,
     api_base=None,
+    profile: VerificationProfile | None = None,
+    context: str | None = None,
 ) -> VerificationResult:
     """Synchronous verification entry point."""
     if not claim or not isinstance(claim, str):
@@ -48,6 +51,7 @@ def verify(
     if not sources:
         raise ValueError("sources must be a non-empty list")
 
+    profile = profile or GENERAL_PROFILE
     tracker = SharedCostTracker(max_spend=max_spend)
     ctx = VerificationContext(
         claim=claim,
@@ -61,6 +65,9 @@ def verify(
         agent_provided_evidence=agent_provided_evidence,
         api_base=api_base,
         cost_tracker=tracker,
+        profile=profile,
+        tier2_lexical_threshold=profile.tier2_lexical_threshold,
+        top_k_chunks=profile.bm25_top_k,
     )
 
     ctx.tier0_atoms = classifier.parse_and_classify(claim)
@@ -68,6 +75,24 @@ def verify(
         chunks = chunker.chunk_sources(ctx)
     else:
         chunks = chunker.wrap_as_chunks(ctx.original_sources)
+
+    tier25_result = tier25_preprocessing.run(ctx, chunks)
+    if tier25_result.has_conflict:
+        atomic = CoreResultBuilder.build_numerical_fast_exit(
+            claim, tier25_result, ctx.original_sources[0]
+        )
+        return VerificationResult(
+            is_valid=False,
+            overall_verdict="Numerical conflict detected in source.",
+            verification_method="tier25_numerical",
+            atomic_claims=[atomic],
+            factual_consistency_score=0.0,
+            sources_used=[ctx.original_sources[0].source_id],
+            rationale=f"Claim number conflicts with source: {atomic.citation}",
+            offending_claim=claim,
+            status="CONTRADICTED",
+            total_cost_usd=ctx.cost_tracker.total_cost_usd,
+        )
 
     if ctx.agent_provided_evidence:
         tier1_authenticity.check_fuzzy(
@@ -137,6 +162,8 @@ async def averify(
     agent_provided_evidence=None,
     api_base=None,
     cost_tracker: SharedCostTracker | None = None,
+    profile: VerificationProfile | None = None,
+    context: str | None = None,
 ) -> VerificationResult:
     """Asynchronous verification entry point."""
     if not claim or not isinstance(claim, str):
@@ -144,6 +171,7 @@ async def averify(
     if not sources:
         raise ValueError("sources must be a non-empty list")
 
+    profile = profile or GENERAL_PROFILE
     tracker = cost_tracker or SharedCostTracker(max_spend=max_spend)
     ctx = VerificationContext(
         claim=claim,
@@ -157,6 +185,9 @@ async def averify(
         agent_provided_evidence=agent_provided_evidence,
         api_base=api_base,
         cost_tracker=tracker,
+        profile=profile,
+        tier2_lexical_threshold=profile.tier2_lexical_threshold,
+        top_k_chunks=profile.bm25_top_k,
     )
 
     ctx.tier0_atoms = classifier.parse_and_classify(claim)
@@ -164,6 +195,24 @@ async def averify(
         chunks = chunker.chunk_sources(ctx)
     else:
         chunks = chunker.wrap_as_chunks(ctx.original_sources)
+
+    tier25_result = tier25_preprocessing.run(ctx, chunks)
+    if tier25_result.has_conflict:
+        atomic = CoreResultBuilder.build_numerical_fast_exit(
+            claim, tier25_result, ctx.original_sources[0]
+        )
+        return VerificationResult(
+            is_valid=False,
+            overall_verdict="Numerical conflict detected in source.",
+            verification_method="tier25_numerical",
+            atomic_claims=[atomic],
+            factual_consistency_score=0.0,
+            sources_used=[ctx.original_sources[0].source_id],
+            rationale=f"Claim number conflicts with source: {atomic.citation}",
+            offending_claim=claim,
+            status="CONTRADICTED",
+            total_cost_usd=ctx.cost_tracker.total_cost_usd,
+        )
 
     if ctx.agent_provided_evidence:
         tier1_authenticity.check_fuzzy(

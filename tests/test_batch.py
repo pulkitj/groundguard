@@ -541,6 +541,12 @@ async def test_mid_batch_cost_exhaustion(mocker):
         ],
     )
 
+    from groundguard.tiers.tier25_preprocessing import Tier25Result
+    mocker.patch(
+        "groundguard.core.verifier.tier25_preprocessing.run",
+        return_value=Tier25Result(has_conflict=False, evidence_bundle=[]),
+    )
+
     mock_loop = MagicMock()
     mock_loop.run_in_executor = AsyncMock(return_value=_t2_escalate())
     mocker.patch(

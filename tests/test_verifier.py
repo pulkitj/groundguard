@@ -522,11 +522,14 @@ def test_verify_tier25_triggers_on_numerical_conflict():
 
 def test_averify_profile_param(mocker):
     import asyncio
+    from unittest.mock import AsyncMock
     from groundguard.core.verifier import averify
     from groundguard.models.result import Source
     from groundguard.profiles import GENERAL_PROFILE
-    mocker.patch("groundguard.tiers.tier3_evaluation.evaluate",
-                 return_value=_mock_tier3_result("VERIFIED"))
+    mocker.patch("groundguard.tiers.tier3_evaluation.evaluate_async",
+                 new_callable=AsyncMock, return_value=_mock_tier3_result("VERIFIED"))
+    mocker.patch("groundguard.core.verifier.ResultBuilder.build_llm_result",
+                 return_value=_verified_result())
     src = Source(source_id="s1", content="x")
     result = asyncio.get_event_loop().run_until_complete(
         averify("x", [src], profile=GENERAL_PROFILE, model="gpt-4o-mini")
