@@ -77,25 +77,28 @@ def load_xlsx(path: str, source_type: str = "table_row") -> list[Source]:
         raise ImportError("openpyxl required: pip install 'groundguard[loaders]'")
 
     wb = load_workbook(path)
-    ws = wb.active
-    rows = list(ws.iter_rows(values_only=True))
-
-    if not rows:
-        return []
-
-    headers = [str(h) if h is not None else f"col_{i}" for i, h in enumerate(rows[0])]
     sources = []
 
-    for row_idx, row in enumerate(rows[1:], start=1):
-        parts = []
-        for header, value in zip(headers, row):
-            if value is not None:
-                parts.append(f"{header}: {value}")
-        if parts:
-            sources.append(Source(
-                content="\n".join(parts),
-                source_id=f"row_{row_idx}",
-                source_type=source_type,
-            ))
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        rows = list(ws.iter_rows(values_only=True))
+
+        if not rows:
+            continue
+
+        headers = [str(h) if h is not None else f"col_{i}" for i, h in enumerate(rows[0])]
+        sheet_prefix = sheet_name.replace(" ", "_")
+
+        for row_idx, row in enumerate(rows[1:], start=1):
+            parts = []
+            for header, value in zip(headers, row):
+                if value is not None:
+                    parts.append(f"{header}: {value}")
+            if parts:
+                sources.append(Source(
+                    content="\n".join(parts),
+                    source_id=f"{sheet_prefix}_row_{row_idx}",
+                    source_type=source_type,
+                ))
 
     return sources

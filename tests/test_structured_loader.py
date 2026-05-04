@@ -56,6 +56,34 @@ def test_load_xlsx_source_type_financial(loader_fixtures):
 
 
 @pytest.mark.loaders
+def test_load_xlsx_reads_all_sheets(tmp_path):
+    """Multi-sheet workbook — all sheets are read, not just the active one."""
+    import openpyxl
+    from groundguard.loaders.structured import load_xlsx
+
+    wb = openpyxl.Workbook()
+    ws1 = wb.active
+    ws1.title = "Sheet1"
+    ws1.append(["Name", "Value"])
+    ws1.append(["Alpha", "100"])
+
+    ws2 = wb.create_sheet("Sheet2")
+    ws2.append(["Name", "Value"])
+    ws2.append(["Beta", "200"])
+
+    path = tmp_path / "multi.xlsx"
+    wb.save(str(path))
+
+    sources = load_xlsx(str(path))
+    assert len(sources) == 2
+    contents = [s.content for s in sources]
+    assert any("Alpha" in c for c in contents)
+    assert any("Beta" in c for c in contents)
+    assert any("Sheet1" in s.source_id for s in sources)
+    assert any("Sheet2" in s.source_id for s in sources)
+
+
+@pytest.mark.loaders
 def test_load_legal_docx_marks_definitions(loader_fixtures):
     from groundguard.loaders.legal import load_legal_docx
 
