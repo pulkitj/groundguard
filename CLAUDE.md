@@ -160,7 +160,7 @@ pytest -m llm --timeout=120 -q
 pytest -m loaders -q
 
 # Run with coverage report
-pytest -m "not llm and not loaders and not langchain" --cov=agentic_verifier --cov-report=term-missing
+pytest -m "not llm and not loaders and not langchain" --cov=groundguard --cov-report=term-missing
 ```
 
 ---
@@ -257,7 +257,7 @@ Chunker (loaders/chunker.py):    Chunk  ← defined here, not in models/
 tests/
 ├── test_exceptions.py      # Phase 1
 ├── test_log.py             # Phase 1
-├── test_models.py          # Phase 2 — TDD #15 (VerificationContext defaults)
+├── test_models.py          # Phase 2 — TDD #15 (VerificationContext defaults) + Phase 21 (profile fields)
 ├── test_classifier.py      # Phase 3 — decimal-safe split, inferential signals
 ├── test_chunker.py         # Phase 4 — char offsets, overlap guard, sliding window
 ├── test_helpers.py         # Phase 4 — @pytest.mark.loaders (skipped by default)
