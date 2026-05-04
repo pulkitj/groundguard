@@ -354,10 +354,9 @@ def evaluate_faithfulness(
 
     # Apply verdict/confidence back to units
     for i, unit in enumerate(units):
-        if i < len(faithfulness.sentence_results):
-            sr = faithfulness.sentence_results[i]
-            unit.confidence = sr.confidence
-            unit.verification_status = sr.verdict
+        sr = faithfulness.sentence_results[i]
+        unit.confidence = sr.confidence
+        unit.verification_status = sr.verdict
 
     verdicts = [sr.verdict for sr in faithfulness.sentence_results]
     entailment_count = sum(1 for v in verdicts if v == "Entailment")
