@@ -128,3 +128,60 @@ def test_tier25_year_conflict_in_temporal_context():
                   char_start=0, char_end=26, token_count=5)
     result = run(ctx, [chunk])
     assert result.has_conflict is True
+
+
+def test_number_pattern_matches_negative_percentage():
+    from groundguard.tiers.tier25_preprocessing import _NUMBER_PATTERN
+    import re
+    assert re.search(_NUMBER_PATTERN, "-5%")
+    assert re.search(_NUMBER_PATTERN, "-300%")
+
+
+def test_number_pattern_matches_negative_currency():
+    from groundguard.tiers.tier25_preprocessing import _NUMBER_PATTERN
+    import re
+    assert re.search(_NUMBER_PATTERN, "-$4.2M")
+
+
+def test_number_pattern_no_false_positive_on_hyphen_word():
+    from groundguard.tiers.tier25_preprocessing import _NUMBER_PATTERN
+    import re
+    # Hyphen in compound word must NOT produce a negative number match
+    m = re.search(_NUMBER_PATTERN, "non-5 year contract")
+    # If it matches, it must not start with '-' (i.e. must not capture -5)
+    assert m is None or not m.group(0).startswith("-")
+
+
+def test_number_pattern_no_match_on_version_string():
+    from groundguard.tiers.tier25_preprocessing import _NUMBER_PATTERN
+    import re
+    # "4.2.1" — second dot makes it a version, not a decimal number
+    # Pattern should match "4.2" (stopping before the second dot) rather than "4.2.1"
+    m = re.search(_NUMBER_PATTERN, "4.2.1")
+    assert m is not None
+    assert m.group(0) == "4.2"  # stops before second dot
+
+
+def test_normalise_number_negative_percentage():
+    from groundguard.tiers.tier25_preprocessing import _normalise_number
+    assert _normalise_number("-5%") == "-5"
+
+
+def test_normalise_number_negative_currency():
+    from groundguard.tiers.tier25_preprocessing import _normalise_number
+    assert _normalise_number("-$4.2M") == "-4.2"
+
+
+def test_tier25_detects_conflict_for_negative_vs_positive():
+    """Claim says profit 5%, source says -5% — must detect conflict."""
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+    src = Source(source_id="s1", content="Profit margin was -5% in Q3.")
+    ctx = VerificationContext(claim="Profit margin was 5% in Q3.", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1",
+                  text_content="Profit margin was -5% in Q3.",
+                  char_start=0, char_end=28, token_count=6)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is True
