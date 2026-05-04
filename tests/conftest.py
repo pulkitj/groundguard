@@ -62,13 +62,16 @@ FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 @pytest.fixture(scope="session", autouse=False)
 def loader_fixtures():
     """
-    Generate sample.pdf and sample.docx in tests/fixtures/ for loaders tests.
+    Generate sample.pdf, sample.docx, sample.xlsx, and legal_sample.docx in
+    tests/fixtures/ for loaders tests.
     Generated on first run; skipped on subsequent runs if files already exist.
-    Requires [loaders] extras: fpdf2 and python-docx.
+    Requires [loaders] extras: fpdf2, python-docx, and openpyxl.
     """
     FIXTURES_DIR.mkdir(exist_ok=True)
     pdf_path = FIXTURES_DIR / "sample.pdf"
     docx_path = FIXTURES_DIR / "sample.docx"
+    xlsx_path = FIXTURES_DIR / "sample.xlsx"
+    legal_docx_path = FIXTURES_DIR / "legal_sample.docx"
 
     if not pdf_path.exists():
         try:
@@ -79,16 +82,54 @@ def loader_fixtures():
             pdf.cell(200, 10, txt="Sample fixture content for agentic-verifier loaders tests.")
             pdf.output(str(pdf_path))
         except ImportError:
-            pytest.skip("fpdf2 not installed — run: pip install fpdf2")
+            pass  # pdf_path left absent; tests that need it will skip individually
 
     if not docx_path.exists():
         try:
             from docx import Document  # type: ignore[import-not-found]
             doc = Document()
+            doc.add_heading("Introduction", level=1)
             doc.add_paragraph("Sample fixture content for agentic-verifier loaders tests.")
+            doc.add_heading("Details", level=1)
+            doc.add_paragraph("Additional detail paragraph for heading split tests.")
             doc.save(str(docx_path))
         except ImportError:
             pytest.skip("python-docx not installed — run: pip install python-docx")
+
+    if not xlsx_path.exists():
+        try:
+            import openpyxl  # type: ignore[import-not-found]
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.append(["Label", "Value"])
+            ws.append(["Revenue", "4.2M"])
+            ws.append(["Expenses", "1.8M"])
+            wb.save(str(xlsx_path))
+        except ImportError:
+            pytest.skip("openpyxl not installed — run: pip install openpyxl")
+
+    if not legal_docx_path.exists():
+        try:
+            from docx import Document  # type: ignore[import-not-found]
+            doc = Document()
+            doc.add_heading("Definitions", level=1)
+            doc.add_paragraph(
+                '"Permitted Costs" means costs approved by the board.'
+            )
+            doc.add_heading("Obligations", level=1)
+            doc.add_paragraph(
+                "The party shall not exceed the Permitted Costs."
+            )
+            doc.save(str(legal_docx_path))
+        except ImportError:
+            pytest.skip("python-docx not installed — run: pip install python-docx")
+
+    return {
+        "pdf_path": pdf_path,
+        "docx_path": docx_path,
+        "xlsx_path": xlsx_path,
+        "legal_docx_path": legal_docx_path,
+    }
 
 
 # ---------------------------------------------------------------------------
