@@ -96,7 +96,7 @@ def _patch_pipeline(mocker, *, t3_side_effect=None, t3_return=None):
         "groundguard.core.verifier.chunker.chunk_sources",
         return_value=[
             Chunk(
-                parent_source_id="doc.pdf",
+                source_id="doc.pdf",
                 text_content="Revenue was $5M.",
                 char_start=0,
                 char_end=16,
@@ -163,7 +163,7 @@ async def test_batch_cost_cap_some_items_skipped(mocker):
         "groundguard.core.verifier.chunker.chunk_sources",
         return_value=[
             Chunk(
-                parent_source_id="doc.pdf",
+                source_id="doc.pdf",
                 text_content="Revenue was $5M.",
                 char_start=0,
                 char_end=16,
@@ -244,7 +244,7 @@ async def test_batch_cost_cap_does_not_raise(mocker):
         "groundguard.core.verifier.chunker.chunk_sources",
         return_value=[
             Chunk(
-                parent_source_id="doc.pdf",
+                source_id="doc.pdf",
                 text_content="Revenue was $5M.",
                 char_start=0,
                 char_end=16,
@@ -314,7 +314,7 @@ async def test_per_claim_model_override_is_respected(mocker):
         "groundguard.core.verifier.chunker.chunk_sources",
         return_value=[
             Chunk(
-                parent_source_id="doc.pdf",
+                source_id="doc.pdf",
                 text_content="Revenue was $5M.",
                 char_start=0,
                 char_end=16,
@@ -395,7 +395,7 @@ async def test_per_claim_model_none_inherits_batch_default(mocker):
         "groundguard.core.verifier.chunker.chunk_sources",
         return_value=[
             Chunk(
-                parent_source_id="doc.pdf",
+                source_id="doc.pdf",
                 text_content="Revenue was $5M.",
                 char_start=0,
                 char_end=16,
@@ -537,7 +537,7 @@ async def test_mid_batch_cost_exhaustion(mocker):
     mocker.patch(
         "groundguard.core.verifier.chunker.chunk_sources",
         return_value=[
-            Chunk(parent_source_id="doc.pdf", text_content="Revenue was $5M.", char_start=0, char_end=16)
+            Chunk(source_id="doc.pdf", text_content="Revenue was $5M.", char_start=0, char_end=16)
         ],
     )
 

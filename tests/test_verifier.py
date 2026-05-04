@@ -32,7 +32,7 @@ def _sources() -> list[Source]:
 
 
 def _chunks() -> list[Chunk]:
-    return [Chunk(parent_source_id="doc.pdf", text_content="Revenue was $5M.", char_start=0, char_end=16)]
+    return [Chunk(source_id="doc.pdf", text_content="Revenue was $5M.", char_start=0, char_end=16)]
 
 
 def _valid_t3() -> Tier3ResponseModel:

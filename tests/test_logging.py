@@ -28,7 +28,7 @@ CLAIM = "Revenue was $5M."
 SOURCES = [Source(content="Revenue was $5M.", source_id="doc.pdf")]
 
 _CHUNK = Chunk(
-    parent_source_id="doc.pdf",
+    source_id="doc.pdf",
     text_content="Revenue was $5M.",
     char_start=0,
     char_end=16,

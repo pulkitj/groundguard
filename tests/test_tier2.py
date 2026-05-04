@@ -17,7 +17,7 @@ def _make_ctx(claim: str = "test claim", top_k: int = 5) -> VerificationContext:
 
 def _make_chunks(n: int, text: str = "word1 word2 word3") -> list[Chunk]:
     return [
-        Chunk(parent_source_id="s1", text_content=text, char_start=0, char_end=len(text))
+        Chunk(source_id="s1", text_content=text, char_start=0, char_end=len(text))
         for _ in range(n)
     ]
 
@@ -45,7 +45,7 @@ def test_escalate_all_low_score_uses_document_order():
     ctx = _make_ctx(claim="xyz123 qwerty", top_k=3)
     # 20 distinct chunks — document order is the creation order
     chunks = [
-        Chunk(parent_source_id="s1", text_content=f"apple{i} banana{i}", char_start=i*10, char_end=i*10+8)
+        Chunk(source_id="s1", text_content=f"apple{i} banana{i}", char_start=i*10, char_end=i*10+8)
         for i in range(20)
     ]
     result = route_claim(ctx, chunks)
@@ -72,9 +72,9 @@ def test_high_score_triggers_skip_llm():
         model="gpt-4o-mini",
     )
     chunks = [
-        Chunk(parent_source_id="s1", text_content="revenue grew thirty percent quarterly", char_start=0, char_end=36),
+        Chunk(source_id="s1", text_content="revenue grew thirty percent quarterly", char_start=0, char_end=36),
         *[
-            Chunk(parent_source_id=f"noise{i}", text_content="unrelated weather forecast for tomorrow", char_start=0, char_end=39)
+            Chunk(source_id=f"noise{i}", text_content="unrelated weather forecast for tomorrow", char_start=0, char_end=39)
             for i in range(4)
         ],
     ]
@@ -92,10 +92,10 @@ def test_partial_match_triggers_escalate_to_llm():
     )
     # Chunks with partial vocabulary overlap
     chunks = [
-        Chunk(parent_source_id="s1", text_content="revenue increased this period somewhat", char_start=0, char_end=36),
-        Chunk(parent_source_id="s1", text_content="apple banana cherry", char_start=40, char_end=58),
-        Chunk(parent_source_id="s1", text_content="unrelated content here", char_start=60, char_end=81),
-        Chunk(parent_source_id="s1", text_content="more different stuff", char_start=82, char_end=101),
+        Chunk(source_id="s1", text_content="revenue increased this period somewhat", char_start=0, char_end=36),
+        Chunk(source_id="s1", text_content="apple banana cherry", char_start=40, char_end=58),
+        Chunk(source_id="s1", text_content="unrelated content here", char_start=60, char_end=81),
+        Chunk(source_id="s1", text_content="more different stuff", char_start=82, char_end=101),
     ]
     result = route_claim(ctx, chunks)
     # Should be ESCALATE_TO_LLM or SKIP_LLM_HIGH_CONFIDENCE depending on actual BM25 score
@@ -107,7 +107,7 @@ def test_partial_match_triggers_escalate_to_llm():
 def test_result_contains_highest_score():
     """Tier2Result.highest_score is populated."""
     ctx = _make_ctx(claim="apple banana cherry")
-    chunks = [Chunk(parent_source_id="s1", text_content="apple banana cherry", char_start=0, char_end=19)]
+    chunks = [Chunk(source_id="s1", text_content="apple banana cherry", char_start=0, char_end=19)]
     result = route_claim(ctx, chunks)
     assert result.highest_score >= 0.0
 

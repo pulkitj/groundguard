@@ -6,7 +6,7 @@ from groundguard.tiers.tier1_authenticity import check_fuzzy
 
 
 def _make_chunks(*texts) -> list[Chunk]:
-    return [Chunk(parent_source_id="doc.pdf", text_content=t, char_start=0, char_end=len(t)) for t in texts]
+    return [Chunk(source_id="doc.pdf", text_content=t, char_start=0, char_end=len(t)) for t in texts]
 
 
 def test_exact_match_passes_threshold():

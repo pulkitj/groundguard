@@ -127,9 +127,9 @@ def render_prompt(ctx: VerificationContext, chunks: list[Chunk]) -> str:
         indent=2,
     )
     sources_block = "\n".join(
-        f"---SOURCE-{b}-{chunk.parent_source_id}---\n"
+        f"---SOURCE-{b}-{chunk.source_id}---\n"
         f"{chunk.text_content}\n"
-        f"---END-SOURCE-{b}-{chunk.parent_source_id}---"
+        f"---END-SOURCE-{b}-{chunk.source_id}---"
         for chunk in chunks
     )
     return TIER3_PROMPT_TEMPLATE.format(

@@ -11,17 +11,19 @@ if TYPE_CHECKING:
 @dataclass
 class Chunk:
     """A chunk of text from a source document, with character offset tracking."""
-    parent_source_id: str
+    source_id: str
     text_content: str
     char_start: int
     char_end: int
+    chunk_id: str = ""
+    token_count: int = 0
 
 
 def wrap_as_chunks(sources: list[Source]) -> list[Chunk]:
     """Wraps each Source as a single Chunk (used when auto_chunk=False)."""
     return [
         Chunk(
-            parent_source_id=s.source_id,
+            source_id=s.source_id,
             text_content=s.content,
             char_start=0,
             char_end=len(s.content),
@@ -54,7 +56,7 @@ def chunk_sources(ctx: VerificationContext) -> list[Chunk]:
         approx_tokens = len(source.content) // 4
         if approx_tokens <= ctx.max_source_tokens:
             chunks.append(Chunk(
-                parent_source_id=source.source_id,
+                source_id=source.source_id,
                 text_content=source.content,
                 char_start=0,
                 char_end=len(source.content),
@@ -76,7 +78,7 @@ def _sliding_window_chunks(source: Source, ctx: VerificationContext) -> list[Chu
     words = content.split()
     if not words:
         return [Chunk(
-            parent_source_id=source.source_id,
+            source_id=source.source_id,
             text_content=content,
             char_start=0,
             char_end=len(content),
@@ -106,7 +108,7 @@ def _sliding_window_chunks(source: Source, ctx: VerificationContext) -> list[Chu
         text_content = content[char_start:char_end]
 
         result.append(Chunk(
-            parent_source_id=source.source_id,
+            source_id=source.source_id,
             text_content=text_content,
             char_start=char_start,
             char_end=char_end,

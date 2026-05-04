@@ -91,11 +91,11 @@ def test_build_lexical_pass_deduplicates_sources():
         Source(content="part B", source_id="addendum.pdf"),
     ])
     chunks = [
-        Chunk(parent_source_id="contract.pdf", text_content="part A", char_start=0, char_end=6),
-        Chunk(parent_source_id="contract.pdf", text_content="part A2", char_start=0, char_end=7),
-        Chunk(parent_source_id="contract.pdf", text_content="part A3", char_start=0, char_end=7),
-        Chunk(parent_source_id="addendum.pdf", text_content="part B", char_start=0, char_end=6),
-        Chunk(parent_source_id="addendum.pdf", text_content="part B2", char_start=0, char_end=7),
+        Chunk(source_id="contract.pdf", text_content="part A", char_start=0, char_end=6),
+        Chunk(source_id="contract.pdf", text_content="part A2", char_start=0, char_end=7),
+        Chunk(source_id="contract.pdf", text_content="part A3", char_start=0, char_end=7),
+        Chunk(source_id="addendum.pdf", text_content="part B", char_start=0, char_end=6),
+        Chunk(source_id="addendum.pdf", text_content="part B2", char_start=0, char_end=7),
     ]
     result = ResultBuilder.build_lexical_pass(ctx, chunks)
     assert result.factual_consistency_score == 1.0
@@ -108,7 +108,7 @@ def test_build_lexical_pass_deduplicates_sources():
 def test_build_lexical_pass_no_source_excerpts():
     """TDD #16: No AtomicClaimResult has non-None source_excerpt (no LLM to extract quotes)."""
     ctx = _make_ctx()
-    chunks = [Chunk(parent_source_id="doc.pdf", text_content="Revenue was $5M.", char_start=0, char_end=16)]
+    chunks = [Chunk(source_id="doc.pdf", text_content="Revenue was $5M.", char_start=0, char_end=16)]
     result = ResultBuilder.build_lexical_pass(ctx, chunks)
     for atom in result.atomic_claims:
         assert atom.source_excerpt is None

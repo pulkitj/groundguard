@@ -27,7 +27,7 @@ def test_small_source_produces_single_chunk():
     assert len(chunks) == 1
     assert chunks[0].char_start == 0
     assert chunks[0].char_end == len(short_text)
-    assert chunks[0].parent_source_id == "test.pdf"
+    assert chunks[0].source_id == "test.pdf"
 
 
 def test_overlap_equal_to_size_raises_value_error():
@@ -78,12 +78,12 @@ def test_auto_chunk_false_wraps_as_single_chunks():
 
 
 def test_wrap_as_chunks_preserves_lineage():
-    """wrap_as_chunks assigns correct parent_source_id."""
+    """wrap_as_chunks assigns correct source_id."""
     sources = [
         Source(content="Doc A content", source_id="a.pdf"),
         Source(content="Doc B content", source_id="b.pdf"),
     ]
     chunks = wrap_as_chunks(sources)
     assert len(chunks) == 2
-    assert chunks[0].parent_source_id == "a.pdf"
-    assert chunks[1].parent_source_id == "b.pdf"
+    assert chunks[0].source_id == "a.pdf"
+    assert chunks[1].source_id == "b.pdf"

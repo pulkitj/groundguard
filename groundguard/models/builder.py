@@ -22,7 +22,7 @@ class ResultBuilder:
         Called when Tier 2 BM25 score exceeds the lexical threshold.
         No LLM call — result assembled from BM25 match data only.
         """
-        sources_used = list(dict.fromkeys(c.parent_source_id for c in matched_chunks))
+        sources_used = list(dict.fromkeys(c.source_id for c in matched_chunks))
         primary_claim_type = (
             ctx.tier0_atoms[0].claim_type if ctx.tier0_atoms else "Extractive"
         )
