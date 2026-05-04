@@ -10,8 +10,8 @@ if TYPE_CHECKING:
 
 from groundguard.models.result import Citation
 
-# Matches: 30%, 300%, $4.2M, $300, 1,000,000, 4.2, 2023, -5%, -$4.2M, -300
-_NUMBER_PATTERN = r'-?[$]?\d[\d,]*(?:\.\d+)?[%MBKT]?'
+# Matches: 30%, 300%, $4.2M, $300, 1,000,000, 4.2, 2023, -5%, -$4.2M
+_NUMBER_PATTERN = r'(?<!\w)-?[$]?\d[\d,]*(?:\.\d+)?[%MBKT]?'
 
 _STOPWORDS = {"the", "a", "an", "and", "or", "in", "of", "to", "is", "was", "be", "see", "for",
               "section", "details", "reference", "per", "at", "by", "with", "that", "this",
