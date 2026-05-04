@@ -440,19 +440,22 @@ async def averify_analysis(
     api_base: str | None = None,
     audit: bool | None = None,
 ) -> GroundingResult:
-    """Async wrapper around verify_analysis."""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
-        None,
-        lambda: verify_analysis(
-            analysis_text,
-            sources,
-            model=model,
-            profile=profile,
-            max_spend=max_spend,
-            api_base=api_base,
-        ),
-    )
+    """Pure-async implementation: no thread pool, no secondary event loop."""
+    profile = profile or GENERAL_PROFILE
+    try:
+        claims = await claim_extractor.extract_claims_async(
+            analysis_text, sources, model, max_spend=max_spend, api_base=api_base
+        )
+    except ParseError:
+        return GroundingResult(
+            is_grounded=False,
+            score=0.0,
+            status="ERROR",
+            evaluation_method="claim_extraction",
+        )
+    inputs = [ClaimInput(claim=c, sources=sources, model=model) for c in claims]
+    results = await verify_batch_async(inputs, model=model, max_spend=max_spend)
+    return _aggregate_analysis_results(results, profile)
 
 
 def verify_structured(

@@ -122,14 +122,22 @@ def test_verify_analysis_parse_errors_count_against_score():
 
 def test_averify_analysis_returns_coroutine(mocker):
     import asyncio
+    from unittest.mock import AsyncMock
     from groundguard.core.verifier import averify_analysis
     from groundguard.models.result import Source
-    mocker.patch("groundguard.core.claim_extractor.extract_claims",
-                 return_value=["x"])
-    mocker.patch("groundguard.core.verifier.verify_batch",
-                 return_value=_mock_batch_results([("VERIFIED", 0.9)]))
+    mocker.patch(
+        "groundguard.core.claim_extractor.extract_claims_async",
+        new_callable=AsyncMock,
+        return_value=["x"],
+    )
+    mocker.patch(
+        "groundguard.core.verifier.verify_batch_async",
+        new_callable=AsyncMock,
+        return_value=_mock_batch_results([("VERIFIED", 0.9)]),
+    )
     src = Source(source_id="s1", content="x")
     result = asyncio.get_event_loop().run_until_complete(
         averify_analysis("x", [src], model="gpt-4o-mini")
     )
     assert result is not None
+    assert result.score == 1.0
