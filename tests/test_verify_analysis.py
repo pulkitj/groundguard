@@ -1,0 +1,110 @@
+"""Tests for verify_analysis / averify_analysis — TDD T-94 (RED state)."""
+import pytest
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+def _mock_atomic(status: str):
+    from groundguard.models.result import AtomicClaimResult
+    return AtomicClaimResult(
+        claim="x",
+        status=status,
+        verification_method="tier3_llm",
+        factual_consistency_score=0.9,
+        is_valid=(status == "VERIFIED"),
+    )
+
+
+def _mock_batch_results(pairs):
+    from groundguard.models.result import AtomicClaimResult
+    results = []
+    for status, score in pairs:
+        results.append(AtomicClaimResult(
+            claim="x",
+            status=status,
+            verification_method="tier3_llm",
+            factual_consistency_score=score,
+            is_valid=(status == "VERIFIED"),
+        ))
+    return results
+
+
+def _mock_single_result(status: str):
+    return _mock_atomic(status)
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+def test_verify_analysis_returns_grounding_result(mocker):
+    from groundguard.core.verifier import verify_analysis
+    from groundguard.models.result import Source, GroundingResult
+    mocker.patch("groundguard.core.claim_extractor.extract_claims",
+                 return_value=["Claim A.", "Claim B."])
+    mocker.patch("groundguard.core.verifier.verify_batch",
+                 return_value=_mock_batch_results([("VERIFIED", 0.9), ("VERIFIED", 0.85)]))
+    src = Source(source_id="s1", content="Claim A. Claim B.")
+    result = verify_analysis("Claim A. Claim B.", [src], model="gpt-4o-mini")
+    assert isinstance(result, GroundingResult)
+    assert result.evaluation_method == "claim_extraction"
+
+
+def test_verify_analysis_score_excludes_unverifiable():
+    from groundguard.core.verifier import _aggregate_analysis_results
+    results = [
+        _mock_atomic("VERIFIED"),
+        _mock_atomic("VERIFIED"),
+        _mock_atomic("UNVERIFIABLE"),
+        _mock_atomic("CONTRADICTED"),
+    ]
+    gr = _aggregate_analysis_results(results)
+    assert abs(gr.score - 2/3) < 0.01
+
+
+def test_verify_analysis_all_unverifiable():
+    from groundguard.core.verifier import _aggregate_analysis_results
+    results = [_mock_atomic("UNVERIFIABLE"), _mock_atomic("UNVERIFIABLE")]
+    gr = _aggregate_analysis_results(results)
+    assert gr.status == "PARTIALLY_GROUNDED"
+    assert gr.score == 0.0
+
+
+def test_verify_analysis_fully_grounded():
+    from groundguard.core.verifier import _aggregate_analysis_results
+    results = [_mock_atomic("VERIFIED"), _mock_atomic("VERIFIED")]
+    gr = _aggregate_analysis_results(results)
+    assert gr.status == "GROUNDED"
+    assert gr.is_grounded is True
+
+
+def test_verify_analysis_fail_contained(mocker):
+    from groundguard.core.verifier import verify_analysis
+    from groundguard.models.result import Source
+    mocker.patch("groundguard.core.claim_extractor.extract_claims",
+                 return_value=["Claim A.", "Claim B."])
+    def partial_fail(claim, sources, **kwargs):
+        if "B" in claim:
+            raise RuntimeError("LLM error")
+        return _mock_single_result("VERIFIED")
+    mocker.patch("groundguard.core.verifier._verify_single_claim", side_effect=partial_fail)
+    src = Source(source_id="s1", content="x")
+    result = verify_analysis("Claim A. Claim B.", [src], model="gpt-4o-mini")
+    assert result is not None
+
+
+def test_averify_analysis_returns_coroutine(mocker):
+    import asyncio
+    from groundguard.core.verifier import averify_analysis
+    from groundguard.models.result import Source
+    mocker.patch("groundguard.core.claim_extractor.extract_claims",
+                 return_value=["x"])
+    mocker.patch("groundguard.core.verifier.verify_batch",
+                 return_value=_mock_batch_results([("VERIFIED", 0.9)]))
+    src = Source(source_id="s1", content="x")
+    result = asyncio.get_event_loop().run_until_complete(
+        averify_analysis("x", [src], model="gpt-4o-mini")
+    )
+    assert result is not None
