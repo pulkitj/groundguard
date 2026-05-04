@@ -131,7 +131,7 @@ def test_averify_analysis_returns_coroutine(mocker):
         return_value=["x"],
     )
     mocker.patch(
-        "groundguard.core.verifier.verify_batch_async",
+        "groundguard.core.verifier.averify_batch",
         new_callable=AsyncMock,
         return_value=_mock_batch_results([("VERIFIED", 0.9)]),
     )

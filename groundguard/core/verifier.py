@@ -274,7 +274,7 @@ async def averify(
     return result
 
 
-async def verify_batch_async(
+async def averify_batch(
     inputs: list[ClaimInput],
     model: str = "gpt-4o-mini",
     max_concurrency: int = 5,
@@ -355,6 +355,9 @@ async def verify_batch_async(
     return results
 
 
+verify_batch_async = averify_batch  # backward-compat alias
+
+
 def verify_batch(
     inputs: list[ClaimInput],
     model: str = "gpt-4o-mini",
@@ -363,14 +366,14 @@ def verify_batch(
     **kwargs,
 ) -> list[VerificationResult]:
     """
-    Sync wrapper around verify_batch_async. Creates a new event loop via asyncio.run().
+    Sync wrapper around averify_batch. Creates a new event loop via asyncio.run().
 
     Constraint: asyncio.run() cannot be called from within an already-running event
     loop (e.g., Jupyter notebooks, FastAPI request handlers). In those contexts,
-    use verify_batch_async() directly with await.
+    use averify_batch() directly with await.
     """
     return asyncio.run(
-        verify_batch_async(
+        averify_batch(
             inputs=inputs,
             model=model,
             max_concurrency=max_concurrency,
@@ -504,7 +507,7 @@ async def averify_analysis(
             evaluation_method="claim_extraction",
         )
     inputs = [ClaimInput(claim=c, sources=sources, model=model) for c in claims]
-    results = await verify_batch_async(inputs, model=model, max_spend=max_spend)
+    results = await averify_batch(inputs, model=model, max_spend=max_spend)
     return _aggregate_analysis_results(results, profile)
 
 
