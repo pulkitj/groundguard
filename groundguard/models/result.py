@@ -80,7 +80,7 @@ class VerificationResult:
 
     is_valid: bool
     overall_verdict: str
-    verification_method: Literal["tier2_lexical", "tier3_llm", "skipped"]
+    verification_method: Literal["tier2_lexical", "tier3_llm", "skipped", "tier25_numerical"]
     atomic_claims: list[AtomicClaimResult]
     factual_consistency_score: float
     sources_used: list[str]
