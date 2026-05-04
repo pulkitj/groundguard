@@ -70,15 +70,19 @@ class SourceAccumulator:
 
         if populate_boundary_context and new_sources:
             all_after = self._sources + new_sources
-            for i, s in enumerate(new_sources):
-                prefix = s.source_id.split("::")[0]
-                idx_in_all = all_after.index(s)
-                if idx_in_all > 0:
-                    prev = all_after[idx_in_all - 1]
-                    if prev.source_id.split("::")[0] == prefix:
-                        last_sentence = prev.content.rstrip().rsplit(".", 1)[0] + "." if "." in prev.content else prev.content
-                        s.next_context = s.content.split(".")[0] + "." if "." in s.content else s.content
-                        prev.next_context = last_sentence
+            for idx_in_all, s in enumerate(all_after):
+                if idx_in_all == 0:
+                    continue
+                prev = all_after[idx_in_all - 1]
+                if prev.source_id.split("::")[0] != s.source_id.split("::")[0]:
+                    continue
+                # last sentence of prev -> prev_context of current
+                parts = [p.strip() for p in prev.content.split(".") if p.strip()]
+                last_sent = (parts[-1] + ".") if parts else prev.content
+                s.prev_context = last_sent
+                # first sentence of current -> next_context of prev
+                first_sent = (s.content.split(".")[0] + ".") if "." in s.content else s.content
+                prev.next_context = first_sent
 
         self._sources.extend(new_sources)
         return self
