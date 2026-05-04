@@ -39,6 +39,28 @@ After every Coder Agent, dispatch a Code Reviewer (`subagent_type: "Explore"`) w
 
 Do not proceed to the next task if the reviewer returns `approved: false`.
 
+### Code Reviewer Prompt — Required Elements (session 6 correction)
+
+The reviewer prompt **must** include all four of these or the review is invalid:
+
+1. **Verbatim `git diff`** — run `git diff HEAD~1` (or `git diff main...<branch>`) and paste the full output inline. Do not ask the reviewer to read files instead.
+2. **Verbatim spec section** — paste the exact section from `plan/engineering_design_v4.md` for the module. Do not paraphrase or summarise it.
+3. **Role 4 output format exactly** — the reviewer must return:
+
+   ```json
+   {
+     "approved": true,
+     "issues": [
+       {"severity": "blocking"|"advisory", "file": "...", "line_hint": "...", "description": "...", "fix": "..."}
+     ]
+   }
+   ```
+
+   Do not use alternate schemas (`findings`, `constraint_checks`, etc.) — the `severity` field is load-bearing: `"blocking"` triggers a Fix Agent, `"advisory"` does not.
+4. **No test execution** — the reviewer is read-only (`Explore`). Do not ask it to run `pytest`. That is the Test Runner's job (Role 5).
+
+**Why:** In Phase 21 the reviewer prompt omitted the git diff, paraphrased the spec instead of pasting it verbatim, used a non-standard output schema, and asked the reviewer to run tests. The review still passed because the implementation happened to be correct — but the process was non-compliant and would have failed to catch spec deviations reliably.
+
 ### Worktree Isolation for Coders
 
 Every Coder Agent call must use `isolation: "worktree"`. The Test Writer commits to `main` first; the Coder's worktree branches from that commit automatically.
@@ -50,47 +72,6 @@ Before sending a message with multiple parallel `Agent` calls, count the expecte
 ### Context Injection — No Placeholder Left Behind
 
 Every agent prompt must have all `[paste ...]` markers replaced with verbatim spec content before dispatching. An unresolved placeholder causes the agent to hallucinate silently (ORCHESTRATOR.md §9).
-
----
-
-<!-- code-review-graph MCP tools -->
-## MCP Tools: code-review-graph
-
-**IMPORTANT: This project has a knowledge graph. ALWAYS use the
-code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
-the codebase.** The graph is faster, cheaper (fewer tokens), and gives
-you structural context (callers, dependents, test coverage) that file
-scanning cannot.
-
-### When to use graph tools FIRST
-
-- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
-- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
-- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
-- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
-- **Architecture questions**: `get_architecture_overview` + `list_communities`
-
-Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
-
-### Key Tools
-
-| Tool | Use when |
-|------|----------|
-| `detect_changes` | Reviewing code changes — gives risk-scored analysis |
-| `get_review_context` | Need source snippets for review — token-efficient |
-| `get_impact_radius` | Understanding blast radius of a change |
-| `get_affected_flows` | Finding which execution paths are impacted |
-| `query_graph` | Tracing callers, callees, imports, tests, dependencies |
-| `semantic_search_nodes` | Finding functions/classes by name or keyword |
-| `get_architecture_overview` | Understanding high-level codebase structure |
-| `refactor_tool` | Planning renames, finding dead code |
-
-### Workflow
-
-1. The graph auto-updates on file changes (via hooks).
-2. Use `detect_changes` for code review.
-3. Use `get_affected_flows` to understand impact.
-4. Use `query_graph` pattern="tests_for" to check coverage.
 
 ---
 
