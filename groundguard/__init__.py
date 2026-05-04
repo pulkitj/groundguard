@@ -12,3 +12,20 @@ from groundguard.core.verifier import (
     averify_clause,
     verify_structured,
 )
+from groundguard.models.result import (
+    GroundingResult,
+    ContextualizedClaimUnit,
+    VerificationAuditRecord,
+)
+from groundguard.profiles import (
+    VerificationProfile,
+    STRICT_PROFILE,
+    GENERAL_PROFILE,
+    RESEARCH_PROFILE,
+)
+from groundguard.circuit_breaker import (
+    assert_faithful,
+    assert_grounded,
+    verify_or_retry,
+    GroundingError,
+)
