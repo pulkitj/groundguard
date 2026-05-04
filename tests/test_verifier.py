@@ -464,3 +464,71 @@ def test_verify_structured_schema_success(mocker):
     assert isinstance(flattened_claim, str)
     assert "revenue" in flattened_claim
     assert "period" in flattened_claim
+
+
+# ---------------------------------------------------------------------------
+# Phase 24 — Profile param + Tier 2.5 wiring (T-86)
+# ---------------------------------------------------------------------------
+
+def _mock_tier3_result(status: str):
+    from groundguard.models.tier3 import (
+        Tier3ResponseModel, TextualEntailment, ConceptualCoverage,
+        AtomicVerification, SourceAttribution,
+    )
+    return Tier3ResponseModel(
+        textual_entailment=TextualEntailment(label="Entailment", probability=0.95),
+        conceptual_coverage=ConceptualCoverage(
+            percentage=90.0, covered_concepts=["x"], missing_concepts=[]
+        ),
+        factual_consistency_score=90.0,
+        verifications=[AtomicVerification(claim_text="x", status=status, source_id="s1")],
+        source_attributions=[SourceAttribution(source_id="s1", role="Supporting")],
+        overall_verdict="Supported.",
+    )
+
+
+def test_verify_profile_strict_disables_bm25_fast_path(mocker):
+    from groundguard.core.verifier import verify
+    from groundguard.models.result import Source
+    from groundguard.profiles import STRICT_PROFILE
+    # STRICT_PROFILE.tier2_lexical_threshold=2.0 -> BM25 score never reaches 2.0 -> always escalates to LLM
+    mock_llm = mocker.patch("groundguard.tiers.tier3_evaluation.evaluate")
+    mock_llm.return_value = _mock_tier3_result("VERIFIED")
+    src = Source(source_id="s1", content="Revenue was $4.2M.")
+    verify("Revenue was $4.2M.", [src], profile=STRICT_PROFILE, model="gpt-4o-mini")
+    mock_llm.assert_called_once()
+
+
+def test_verify_profile_general_default(mocker):
+    from groundguard.core.verifier import verify
+    from groundguard.models.result import Source
+    from groundguard.profiles import GENERAL_PROFILE
+    mocker.patch("groundguard.tiers.tier3_evaluation.evaluate",
+                 return_value=_mock_tier3_result("VERIFIED"))
+    src = Source(source_id="s1", content="x")
+    result = verify("x", [src], model="gpt-4o-mini")
+    # no error — GENERAL_PROFILE is default
+    assert result is not None
+
+
+def test_verify_tier25_triggers_on_numerical_conflict():
+    from groundguard.core.verifier import verify
+    from groundguard.models.result import Source
+    src = Source(source_id="s1", content="The fee shall not exceed 30% of revenue.")
+    result = verify("The fee shall not exceed 300% of revenue.", [src], model="gpt-4o-mini")
+    assert result.status == "CONTRADICTED"
+    assert result.verification_method == "tier25_numerical"
+
+
+def test_averify_profile_param(mocker):
+    import asyncio
+    from groundguard.core.verifier import averify
+    from groundguard.models.result import Source
+    from groundguard.profiles import GENERAL_PROFILE
+    mocker.patch("groundguard.tiers.tier3_evaluation.evaluate",
+                 return_value=_mock_tier3_result("VERIFIED"))
+    src = Source(source_id="s1", content="x")
+    result = asyncio.get_event_loop().run_until_complete(
+        averify("x", [src], profile=GENERAL_PROFILE, model="gpt-4o-mini")
+    )
+    assert result is not None
