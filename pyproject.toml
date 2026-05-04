@@ -40,6 +40,7 @@ markers = [
     "loaders: marks tests requiring optional loaders extras",
     "langchain: marks tests requiring optional langchain extras",
     "compat: marks tests as multi-model compatibility smoke tests (parametrized across all compat models)",
+    "legal: marks tests for legal clause preprocessor (PassiveVoiceNormalizer, TermRegistry, decompose_clause)",
 ]
 addopts = "--cov=groundguard --cov-report=term-missing"
 timeout = 300
