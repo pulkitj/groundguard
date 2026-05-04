@@ -4,8 +4,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from agentic_verifier._log import logger
-from agentic_verifier.exceptions import VerificationFailedError
+from groundguard._log import logger
+from groundguard.exceptions import VerificationFailedError
 
 _THINK_TAG_RE = re.compile(r'<think>.*?</think>', re.DOTALL | re.IGNORECASE)
 # BUG-01: unanchored search so conversational pre/post-text is ignored.

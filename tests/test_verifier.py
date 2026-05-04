@@ -6,15 +6,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agentic_verifier.exceptions import (
+from groundguard.exceptions import (
     ParseError,
     VerificationCostExceededError,
     VerificationFailedError,
 )
-from agentic_verifier.loaders.chunker import Chunk
-from agentic_verifier.models.internal import RoutingDecision, Tier2Result
-from agentic_verifier.models.result import Source, VerificationResult
-from agentic_verifier.models.tier3 import (
+from groundguard.loaders.chunker import Chunk
+from groundguard.models.internal import RoutingDecision, Tier2Result
+from groundguard.models.result import Source, VerificationResult
+from groundguard.models.tier3 import (
     AtomicVerification,
     ConceptualCoverage,
     SourceAttribution,
@@ -85,12 +85,12 @@ def _escalate_t2() -> Tier2Result:
 # ---------------------------------------------------------------------------
 
 _BASE_PATCHES = {
-    "classifier": "agentic_verifier.core.verifier.classifier.parse_and_classify",
-    "chunker": "agentic_verifier.core.verifier.chunker.chunk_sources",
-    "tier1": "agentic_verifier.core.verifier.tier1_authenticity.check_fuzzy",
-    "tier2": "agentic_verifier.core.verifier.tier2_semantic.route_claim",
-    "tier3": "agentic_verifier.core.verifier.tier3_evaluation.evaluate",
-    "builder_llm": "agentic_verifier.core.verifier.ResultBuilder.build_llm_result",
+    "classifier": "groundguard.core.verifier.classifier.parse_and_classify",
+    "chunker": "groundguard.core.verifier.chunker.chunk_sources",
+    "tier1": "groundguard.core.verifier.tier1_authenticity.check_fuzzy",
+    "tier2": "groundguard.core.verifier.tier2_semantic.route_claim",
+    "tier3": "groundguard.core.verifier.tier3_evaluation.evaluate",
+    "builder_llm": "groundguard.core.verifier.ResultBuilder.build_llm_result",
 }
 
 
@@ -131,7 +131,7 @@ def _apply_base_patches(mocker, *, tier3_side_effect=None, tier3_return=None):
 
 def test_parse_error_returns_parse_error_status(mocker):
     """#6c: ParseError from evaluate() must NOT propagate; result has status='PARSE_ERROR'."""
-    from agentic_verifier.core.verifier import verify
+    from groundguard.core.verifier import verify
 
     _apply_base_patches(mocker, tier3_side_effect=ParseError("bad json"))
 
@@ -142,7 +142,7 @@ def test_parse_error_returns_parse_error_status(mocker):
 
 def test_parse_error_sets_verification_method_skipped(mocker):
     """#6c: ParseError result must have verification_method='skipped'."""
-    from agentic_verifier.core.verifier import verify
+    from groundguard.core.verifier import verify
 
     _apply_base_patches(mocker, tier3_side_effect=ParseError("bad json"))
 
@@ -157,7 +157,7 @@ def test_parse_error_sets_verification_method_skipped(mocker):
 
 def test_cost_exceeded_propagates(mocker):
     """#19a: VerificationCostExceededError raised by evaluate() must propagate out of verify()."""
-    from agentic_verifier.core.verifier import verify
+    from groundguard.core.verifier import verify
 
     _apply_base_patches(mocker, tier3_side_effect=VerificationCostExceededError("cap hit"))
 
@@ -173,7 +173,7 @@ def test_api_connection_error_wrapped_as_verification_failed(mocker):
     """#19b: litellm.exceptions.APIConnectionError from evaluate() → VerificationFailedError."""
     import litellm
 
-    from agentic_verifier.core.verifier import verify
+    from groundguard.core.verifier import verify
 
     _apply_base_patches(
         mocker,
@@ -190,7 +190,7 @@ def test_api_connection_error_wrapped_as_verification_failed(mocker):
 
 def test_tier1_gate_only_does_not_short_circuit(mocker):
     """Tier 1 returning without raising must NOT prevent tier2 route_claim from being called."""
-    from agentic_verifier.core.verifier import verify
+    from groundguard.core.verifier import verify
 
     mocks = _apply_base_patches(mocker)
     # tier1 returns a chunk (simulating a passing gate) without raising
@@ -207,30 +207,30 @@ def test_tier1_gate_only_does_not_short_circuit(mocker):
 
 async def test_averify_dispatches_bm25_to_executor(mocker):
     """#9: averify() must offload tier2 route_claim via loop.run_in_executor (not blocking event loop)."""
-    from agentic_verifier.tiers import tier2_semantic
+    from groundguard.tiers import tier2_semantic
 
-    from agentic_verifier.core.verifier import averify
+    from groundguard.core.verifier import averify
 
     # Patch classifier, chunker, tier1 so the pipeline can get to tier2
     mocker.patch(
-        "agentic_verifier.core.verifier.classifier.parse_and_classify",
+        "groundguard.core.verifier.classifier.parse_and_classify",
         return_value=[],
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.chunker.chunk_sources",
+        "groundguard.core.verifier.chunker.chunk_sources",
         return_value=_chunks(),
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.tier1_authenticity.check_fuzzy",
+        "groundguard.core.verifier.tier1_authenticity.check_fuzzy",
         return_value=None,
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.tier3_evaluation.evaluate_async",
+        "groundguard.core.verifier.tier3_evaluation.evaluate_async",
         new_callable=AsyncMock,
         return_value=_valid_t3(),
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.ResultBuilder.build_llm_result",
+        "groundguard.core.verifier.ResultBuilder.build_llm_result",
         return_value=_verified_result(),
     )
 
@@ -239,7 +239,7 @@ async def test_averify_dispatches_bm25_to_executor(mocker):
     mock_loop.run_in_executor = AsyncMock(return_value=_escalate_t2())
 
     mocker.patch(
-        "agentic_verifier.core.verifier.asyncio.get_running_loop",
+        "groundguard.core.verifier.asyncio.get_running_loop",
         return_value=mock_loop,
     )
 
@@ -260,31 +260,31 @@ async def test_averify_dispatches_bm25_to_executor(mocker):
 
 async def test_averify_end_to_end_async_returns_verified(mocker):
     """averify() wired end-to-end: fully mocked async path must return status='VERIFIED'."""
-    from agentic_verifier.core.verifier import averify
+    from groundguard.core.verifier import averify
 
     mocker.patch(
-        "agentic_verifier.core.verifier.classifier.parse_and_classify",
+        "groundguard.core.verifier.classifier.parse_and_classify",
         return_value=[],
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.chunker.chunk_sources",
+        "groundguard.core.verifier.chunker.chunk_sources",
         return_value=_chunks(),
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.tier1_authenticity.check_fuzzy",
+        "groundguard.core.verifier.tier1_authenticity.check_fuzzy",
         return_value=None,
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.tier2_semantic.route_claim",
+        "groundguard.core.verifier.tier2_semantic.route_claim",
         return_value=_escalate_t2(),
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.tier3_evaluation.evaluate_async",
+        "groundguard.core.verifier.tier3_evaluation.evaluate_async",
         new_callable=AsyncMock,
         return_value=_valid_t3(),
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.ResultBuilder.build_llm_result",
+        "groundguard.core.verifier.ResultBuilder.build_llm_result",
         return_value=_verified_result(),
     )
 
@@ -294,7 +294,7 @@ async def test_averify_end_to_end_async_returns_verified(mocker):
     mock_loop = MagicMock()
     mock_loop.run_in_executor = AsyncMock(return_value=_escalate_t2())
     mocker.patch(
-        "agentic_verifier.core.verifier.asyncio.get_running_loop",
+        "groundguard.core.verifier.asyncio.get_running_loop",
         return_value=mock_loop,
     )
 
@@ -309,21 +309,21 @@ async def test_averify_end_to_end_async_returns_verified(mocker):
 
 def test_verify_empty_claim_raises_value_error():
     """T-52a: verify(claim='', sources=[...]) raises ValueError before pipeline runs."""
-    from agentic_verifier.core.verifier import verify
+    from groundguard.core.verifier import verify
     with pytest.raises(ValueError):
         verify(claim="", sources=_sources())
 
 
 def test_verify_none_claim_raises_value_error():
     """T-52b: verify(claim=None, sources=[...]) raises ValueError."""
-    from agentic_verifier.core.verifier import verify
+    from groundguard.core.verifier import verify
     with pytest.raises(ValueError):
         verify(claim=None, sources=_sources())  # type: ignore[arg-type]
 
 
 def test_verify_empty_sources_raises_value_error():
     """T-52c: verify(claim='valid', sources=[]) raises ValueError."""
-    from agentic_verifier.core.verifier import verify
+    from groundguard.core.verifier import verify
     with pytest.raises(ValueError):
         verify(claim="Revenue was $5M.", sources=[])
 
@@ -339,24 +339,24 @@ async def test_tiny_budget_single_item_batch_returns_skipped_due_to_cost(mocker)
     verify_batch_async absorbs it → SKIPPED_DUE_TO_COST. Test via 1-item batch.
     """
     from unittest.mock import AsyncMock, MagicMock
-    from agentic_verifier.core.verifier import verify_batch_async
-    from agentic_verifier.exceptions import VerificationCostExceededError
-    from agentic_verifier.models.internal import ClaimInput, VerificationContext
+    from groundguard.core.verifier import verify_batch_async
+    from groundguard.exceptions import VerificationCostExceededError
+    from groundguard.models.internal import ClaimInput, VerificationContext
 
-    mocker.patch("agentic_verifier.core.verifier.classifier.parse_and_classify", return_value=[])
-    mocker.patch("agentic_verifier.core.verifier.chunker.chunk_sources", return_value=_chunks())
-    mocker.patch("agentic_verifier.core.verifier.tier1_authenticity.check_fuzzy", return_value=None)
+    mocker.patch("groundguard.core.verifier.classifier.parse_and_classify", return_value=[])
+    mocker.patch("groundguard.core.verifier.chunker.chunk_sources", return_value=_chunks())
+    mocker.patch("groundguard.core.verifier.tier1_authenticity.check_fuzzy", return_value=None)
 
     mock_loop = MagicMock()
     mock_loop.run_in_executor = AsyncMock(return_value=_escalate_t2())
-    mocker.patch("agentic_verifier.core.verifier.asyncio.get_running_loop", return_value=mock_loop)
+    mocker.patch("groundguard.core.verifier.asyncio.get_running_loop", return_value=mock_loop)
 
     async def _raise_cost_exceeded(ctx: VerificationContext, _chunks):
         ctx.cost_tracker.add_cost(1.0)  # always blows the cap
         return _valid_t3()
 
     mocker.patch(
-        "agentic_verifier.core.verifier.tier3_evaluation.evaluate_async",
+        "groundguard.core.verifier.tier3_evaluation.evaluate_async",
         side_effect=_raise_cost_exceeded,
     )
 
@@ -374,8 +374,8 @@ async def test_tiny_budget_single_item_batch_returns_skipped_due_to_cost(mocker)
 
 def test_verify_structured_schema_failure():
     from pydantic import BaseModel
-    from agentic_verifier.core.verifier import verify_structured
-    from agentic_verifier.models.result import Source
+    from groundguard.core.verifier import verify_structured
+    from groundguard.models.result import Source
 
     class MySchema(BaseModel):
         revenue: float  # expects a float
@@ -396,20 +396,20 @@ def test_verify_structured_schema_failure():
 
 async def test_averify_cost_exceeded_error_propagates(mocker):
     """averify() must propagate VerificationCostExceededError (fail-loud contract)."""
-    from agentic_verifier.core.verifier import averify
-    from agentic_verifier.exceptions import VerificationCostExceededError
+    from groundguard.core.verifier import averify
+    from groundguard.exceptions import VerificationCostExceededError
     from unittest.mock import AsyncMock, MagicMock
 
-    mocker.patch("agentic_verifier.core.verifier.classifier.parse_and_classify", return_value=[])
-    mocker.patch("agentic_verifier.core.verifier.chunker.chunk_sources", return_value=_chunks())
-    mocker.patch("agentic_verifier.core.verifier.tier1_authenticity.check_fuzzy", return_value=None)
+    mocker.patch("groundguard.core.verifier.classifier.parse_and_classify", return_value=[])
+    mocker.patch("groundguard.core.verifier.chunker.chunk_sources", return_value=_chunks())
+    mocker.patch("groundguard.core.verifier.tier1_authenticity.check_fuzzy", return_value=None)
 
     mock_loop = MagicMock()
     mock_loop.run_in_executor = AsyncMock(return_value=_escalate_t2())
-    mocker.patch("agentic_verifier.core.verifier.asyncio.get_running_loop", return_value=mock_loop)
+    mocker.patch("groundguard.core.verifier.asyncio.get_running_loop", return_value=mock_loop)
 
     mocker.patch(
-        "agentic_verifier.core.verifier.tier3_evaluation.evaluate_async",
+        "groundguard.core.verifier.tier3_evaluation.evaluate_async",
         new_callable=AsyncMock,
         side_effect=VerificationCostExceededError("cap hit"),
     )
@@ -420,14 +420,14 @@ async def test_averify_cost_exceeded_error_propagates(mocker):
 
 def test_auto_chunk_false_pipeline_path(mocker):
     """auto_chunk=False: source forwarded as single chunk, not split by chunker."""
-    from agentic_verifier.core.verifier import verify
+    from groundguard.core.verifier import verify
 
-    chunker_mock = mocker.patch("agentic_verifier.core.verifier.chunker.chunk_sources")
-    mocker.patch("agentic_verifier.core.verifier.classifier.parse_and_classify", return_value=[])
-    mocker.patch("agentic_verifier.core.verifier.tier1_authenticity.check_fuzzy", return_value=None)
-    mocker.patch("agentic_verifier.core.verifier.tier2_semantic.route_claim", return_value=_escalate_t2())
-    mocker.patch("agentic_verifier.core.verifier.tier3_evaluation.evaluate", return_value=_valid_t3())
-    mocker.patch("agentic_verifier.core.verifier.ResultBuilder.build_llm_result", return_value=_verified_result())
+    chunker_mock = mocker.patch("groundguard.core.verifier.chunker.chunk_sources")
+    mocker.patch("groundguard.core.verifier.classifier.parse_and_classify", return_value=[])
+    mocker.patch("groundguard.core.verifier.tier1_authenticity.check_fuzzy", return_value=None)
+    mocker.patch("groundguard.core.verifier.tier2_semantic.route_claim", return_value=_escalate_t2())
+    mocker.patch("groundguard.core.verifier.tier3_evaluation.evaluate", return_value=_valid_t3())
+    mocker.patch("groundguard.core.verifier.ResultBuilder.build_llm_result", return_value=_verified_result())
 
     verify(claim="Revenue was $5M.", sources=_sources(), auto_chunk=False)
 
@@ -437,8 +437,8 @@ def test_auto_chunk_false_pipeline_path(mocker):
 
 def test_verify_structured_schema_success(mocker):
     from pydantic import BaseModel
-    from agentic_verifier.core.verifier import verify_structured
-    from agentic_verifier.models.result import Source
+    from groundguard.core.verifier import verify_structured
+    from groundguard.models.result import Source
 
     class RevenueSchema(BaseModel):
         revenue: float
@@ -446,7 +446,7 @@ def test_verify_structured_schema_success(mocker):
 
     # Patch verify() itself to capture what flattened string it receives
     mock_verify = mocker.patch(
-        "agentic_verifier.core.verifier.verify",
+        "groundguard.core.verifier.verify",
         return_value=_verified_result(),
     )
 

@@ -1,4 +1,4 @@
-"""Pytest configuration and shared fixtures for the agentic_verifier test suite."""
+"""Pytest configuration and shared fixtures for the groundguard test suite."""
 from __future__ import annotations
 
 import os

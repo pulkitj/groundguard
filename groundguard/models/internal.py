@@ -6,10 +6,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from agentic_verifier.loaders.chunker import Chunk
-    from agentic_verifier.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+    from groundguard.models.result import Source
 
-from agentic_verifier.exceptions import VerificationCostExceededError
+from groundguard.exceptions import VerificationCostExceededError
 
 
 class SharedCostTracker:

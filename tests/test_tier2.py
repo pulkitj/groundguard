@@ -1,9 +1,9 @@
 """Tests for Tier 2 semantic routing — TDD items #12 and #13."""
 import pytest
-from agentic_verifier.loaders.chunker import Chunk
-from agentic_verifier.models.internal import RoutingDecision, Tier2Result, VerificationContext
-from agentic_verifier.models.result import Source
-from agentic_verifier.tiers.tier2_semantic import route_claim
+from groundguard.loaders.chunker import Chunk
+from groundguard.models.internal import RoutingDecision, Tier2Result, VerificationContext
+from groundguard.models.result import Source
+from groundguard.tiers.tier2_semantic import route_claim
 
 
 def _make_ctx(claim: str = "test claim", top_k: int = 5) -> VerificationContext:
@@ -59,7 +59,7 @@ def test_high_score_triggers_skip_llm():
 
     Requires N>=5 sources for positive BM25 IDF scores.
     """
-    from agentic_verifier.models.result import Source
+    from groundguard.models.result import Source
     # Need at least 5 sources so BM25 IDF is positive and high-confidence match can fire
     noise_sources = [
         Source(content="unrelated weather forecast for tomorrow", source_id=f"noise{i}")
@@ -120,7 +120,7 @@ def test_branch_c_vocabulary_overlap_low_score(mocker):
     """Open Issue #2: claim words appear in chunks but BM25 score is still <= 0.01 → ESCALATE_ALL_LOW_SCORE."""
     from rank_bm25 import BM25Okapi
     import numpy as np
-    from agentic_verifier.models.internal import RoutingDecision
+    from groundguard.models.internal import RoutingDecision
 
     chunks = _make_chunks(5, text="revenue profit loss income")  # some real chunks
 

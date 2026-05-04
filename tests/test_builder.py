@@ -1,13 +1,13 @@
 """Tests for ResultBuilder — TDD items #7, #16, #18, #20."""
 import pytest
-from agentic_verifier.models.result import Source, VerificationResult, AtomicClaimResult
-from agentic_verifier.models.internal import VerificationContext, ClassifiedAtom
-from agentic_verifier.models.tier3 import (
+from groundguard.models.result import Source, VerificationResult, AtomicClaimResult
+from groundguard.models.internal import VerificationContext, ClassifiedAtom
+from groundguard.models.tier3 import (
     Tier3ResponseModel, TextualEntailment, ConceptualCoverage,
     AtomicVerification, SourceAttribution,
 )
-from agentic_verifier.loaders.chunker import Chunk
-from agentic_verifier.models.builder import ResultBuilder
+from groundguard.loaders.chunker import Chunk
+from groundguard.models.builder import ResultBuilder
 
 
 def _make_ctx(sources=None, atoms=None) -> VerificationContext:
@@ -152,9 +152,9 @@ def test_build_llm_result_transplants_page_hint():
 
 def test_build_lexical_pass_empty_matched_chunks():
     """Open Issue #4: build_lexical_pass([]) returns valid result with sources_used=[] and source_id=None."""
-    from agentic_verifier.models.builder import ResultBuilder
-    from agentic_verifier.models.internal import VerificationContext
-    from agentic_verifier.models.result import Source
+    from groundguard.models.builder import ResultBuilder
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
 
     ctx = VerificationContext(
         claim="Revenue was $5M.",

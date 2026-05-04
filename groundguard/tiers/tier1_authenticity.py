@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from rapidfuzz import fuzz
-from agentic_verifier.exceptions import HallucinatedEvidenceError
-from agentic_verifier._log import logger
+from groundguard.exceptions import HallucinatedEvidenceError
+from groundguard._log import logger
 
 if TYPE_CHECKING:
-    from agentic_verifier.loaders.chunker import Chunk
+    from groundguard.loaders.chunker import Chunk
 
 
 def check_fuzzy(

@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from agentic_verifier.models.internal import VerificationContext
-    from agentic_verifier.models.result import Source
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
 
 
 @dataclass

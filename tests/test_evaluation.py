@@ -3,13 +3,13 @@ import json
 import re
 import pytest
 from unittest.mock import MagicMock
-from agentic_verifier.models.internal import VerificationContext, ClassifiedAtom
-from agentic_verifier.models.result import Source
-from agentic_verifier.models.tier3 import (
+from groundguard.models.internal import VerificationContext, ClassifiedAtom
+from groundguard.models.result import Source
+from groundguard.models.tier3 import (
     Tier3ResponseModel, TextualEntailment, ConceptualCoverage,
     AtomicVerification, SourceAttribution,
 )
-from agentic_verifier.tiers.tier3_evaluation import render_prompt, parse_response
+from groundguard.tiers.tier3_evaluation import render_prompt, parse_response
 
 
 def _make_ctx(claim="Revenue was $5M.") -> VerificationContext:
@@ -21,7 +21,7 @@ def _make_ctx(claim="Revenue was $5M.") -> VerificationContext:
 
 
 def _make_chunks():
-    from agentic_verifier.loaders.chunker import Chunk
+    from groundguard.loaders.chunker import Chunk
     return [Chunk(parent_source_id="doc.pdf", text_content="Revenue was $5M.", char_start=0, char_end=16)]
 
 
@@ -115,7 +115,7 @@ def test_parse_response_uses_parsed_attribute_if_present():
 def test_evaluate_retries_once_on_validation_error(mocker):
     """TDD #6a: On first ValidationError, retries with temperature=0.1 and error appended."""
     import pydantic
-    from agentic_verifier.tiers.tier3_evaluation import evaluate
+    from groundguard.tiers.tier3_evaluation import evaluate
 
     valid_model = _valid_t3_model()
     call_count = [0]
@@ -143,8 +143,8 @@ def test_evaluate_retries_once_on_validation_error(mocker):
 
 def test_evaluate_raises_parse_error_after_two_failures(mocker):
     """TDD #6b: Two consecutive validation failures raise ParseError."""
-    from agentic_verifier.tiers.tier3_evaluation import evaluate
-    from agentic_verifier.exceptions import ParseError
+    from groundguard.tiers.tier3_evaluation import evaluate
+    from groundguard.exceptions import ParseError
 
     def mock_completion(**kwargs):
         mock_resp = MagicMock()
@@ -167,7 +167,7 @@ def test_evaluate_raises_parse_error_after_two_failures(mocker):
 async def test_evaluate_async_returns_tier3_response_model(mocker):
     """Open Issue #1: evaluate_async() async path returns a valid Tier3ResponseModel."""
     from unittest.mock import AsyncMock, MagicMock
-    from agentic_verifier.tiers.tier3_evaluation import evaluate_async
+    from groundguard.tiers.tier3_evaluation import evaluate_async
 
     valid_model = _valid_t3_model()
 
@@ -187,7 +187,7 @@ async def test_evaluate_async_returns_tier3_response_model(mocker):
 async def test_evaluate_async_retries_once_on_validation_error(mocker):
     """Open Issue #1b: evaluate_async() retries once on parse failure, then returns valid model."""
     from unittest.mock import AsyncMock, MagicMock
-    from agentic_verifier.tiers.tier3_evaluation import evaluate_async
+    from groundguard.tiers.tier3_evaluation import evaluate_async
 
     valid_model = _valid_t3_model()
     call_count = [0]
@@ -219,7 +219,7 @@ async def test_evaluate_async_retries_once_on_validation_error(mocker):
 def test_parse_response_strips_think_tags(mocker):
     """parse_response with <think> tags in content (Ollama thinking mode) — strips tags before JSON parse."""
     from unittest.mock import MagicMock
-    from agentic_verifier.tiers.tier3_evaluation import parse_response
+    from groundguard.tiers.tier3_evaluation import parse_response
 
     model = _valid_t3_model()
     raw_json = model.model_dump_json()
@@ -236,7 +236,7 @@ def test_parse_response_strips_think_tags(mocker):
 def test_parse_response_none_content_reasoning_content_fallback(mocker):
     """parse_response when message.content is None but reasoning_content has valid JSON."""
     from unittest.mock import MagicMock
-    from agentic_verifier.tiers.tier3_evaluation import parse_response
+    from groundguard.tiers.tier3_evaluation import parse_response
 
     model = _valid_t3_model()
     raw_json = model.model_dump_json()
@@ -252,8 +252,8 @@ def test_parse_response_none_content_reasoning_content_fallback(mocker):
 def test_parse_response_choices_empty_raises_descriptively(mocker):
     """litellm.completion returning choices=[] raises with a descriptive error, not IndexError."""
     from unittest.mock import MagicMock
-    from agentic_verifier.tiers.tier3_evaluation import evaluate
-    from agentic_verifier.exceptions import ParseError
+    from groundguard.tiers.tier3_evaluation import evaluate
+    from groundguard.exceptions import ParseError
 
     # Build a response with choices=[]
     mock_resp = MagicMock()
@@ -276,7 +276,7 @@ async def test_evaluate_async_exhausts_all_backoff_attempts(mocker):
     """BUG-03: evaluate_async retries _BACKOFF_MAX_ATTEMPTS times before re-raising."""
     from unittest.mock import AsyncMock
     import litellm
-    from agentic_verifier.tiers.tier3_evaluation import evaluate_async, _BACKOFF_MAX_ATTEMPTS
+    from groundguard.tiers.tier3_evaluation import evaluate_async, _BACKOFF_MAX_ATTEMPTS
 
     call_count = [0]
 
@@ -299,7 +299,7 @@ async def test_evaluate_async_retries_on_transient_error(mocker):
     """T-66: evaluate_async retries transient errors with exponential backoff."""
     from unittest.mock import AsyncMock, MagicMock
     import litellm
-    from agentic_verifier.tiers.tier3_evaluation import evaluate_async
+    from groundguard.tiers.tier3_evaluation import evaluate_async
 
     valid_model = _valid_t3_model()
     call_count = [0]
@@ -352,7 +352,7 @@ def test_atomic_verification_coerces_scalar_string_to_list():
 
 def test_parse_response_accepts_reasoning_basis_list():
     """parse_response succeeds when reasoning_basis is a JSON array (inferential claim)."""
-    from agentic_verifier.tiers.tier3_evaluation import parse_response
+    from groundguard.tiers.tier3_evaluation import parse_response
 
     model_with_reasoning = Tier3ResponseModel(
         textual_entailment=TextualEntailment(label="Entailment", probability=0.9),
@@ -377,7 +377,7 @@ def test_parse_response_accepts_reasoning_basis_list():
 
 def test_parse_response_coerces_scalar_reasoning_basis():
     """parse_response succeeds when model returns reasoning_basis as a scalar string (regression guard)."""
-    from agentic_verifier.tiers.tier3_evaluation import parse_response
+    from groundguard.tiers.tier3_evaluation import parse_response
     import json
 
     raw = {
@@ -404,7 +404,7 @@ def test_parse_response_coerces_scalar_reasoning_basis():
 
 def test_prompt_specifies_reasoning_basis_as_array():
     """The Tier 3 prompt explicitly instructs the model to emit reasoning_basis as a JSON array."""
-    from agentic_verifier.tiers.tier3_evaluation import render_prompt
+    from groundguard.tiers.tier3_evaluation import render_prompt
     prompt = render_prompt(_make_ctx(), _make_chunks())
     # Must mention reasoning_basis AND array/list in the same instruction, not just incidentally
     rb_idx = prompt.find("reasoning_basis")

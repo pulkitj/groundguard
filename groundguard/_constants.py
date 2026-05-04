@@ -1,4 +1,4 @@
-"""Shared constants for the agentic_verifier library."""
+"""Shared constants for the groundguard library."""
 from __future__ import annotations
 
 import litellm

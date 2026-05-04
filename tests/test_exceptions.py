@@ -1,5 +1,5 @@
 import pytest
-from agentic_verifier.exceptions import (
+from groundguard.exceptions import (
     HallucinatedEvidenceError,
     VerificationCostExceededError,
     VerificationFailedError,

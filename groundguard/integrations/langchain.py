@@ -9,9 +9,9 @@ except ImportError as e:
         "Install it with: pip install agentic-verifier[langchain]"
     ) from e
 
-from agentic_verifier.core.verifier import verify
-from agentic_verifier.exceptions import VerificationFailedError
-from agentic_verifier.models.result import Source
+from groundguard.core.verifier import verify
+from groundguard.exceptions import VerificationFailedError
+from groundguard.models.result import Source
 
 
 class AgenticVerifierCallback:

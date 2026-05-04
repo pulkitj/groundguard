@@ -1,7 +1,7 @@
 """Test data models — TDD item #15."""
 import math
-from agentic_verifier.models.internal import VerificationContext
-from agentic_verifier.models.result import Source
+from groundguard.models.internal import VerificationContext
+from groundguard.models.result import Source
 
 
 def test_verification_context_default_cost_tracker_is_inf():

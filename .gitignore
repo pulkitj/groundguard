@@ -9,20 +9,36 @@ __pycache__/
 
 # Warp AI context (local only)
 .warp/
-
-#temp folders and files
-.claude/
-/code_diff_utf8.patch
-/code_diff.patch
-/codebase_analysis.md
-/commit_ad624d4.txt
-/diff.patch
-/progress.json
-
-# Planning documents
-plan/
-docs/superpowers/
-
-# code review graph
-temp_code_review_graph/
-.code-review-graph/
+code_diff.patch
+code_diff_utf8.patch
+.gitignore
+CODEBASE_ANALYSIS.md
+commit_ad624d4.txt
+diff.patch
+plan/BUG_FIX_TASKS.md
+plan/CLAUDE_CODE_TASKS.md
+plan/engineering_design_update_v2.md
+plan/engineering_design_v3.md
+plan/ENHANCEMENT_ADDENDUM_v2.md
+plan/ENHANCEMENT_ADDENDUM_v3.md
+plan/ENHANCEMENT_ADDENDUM.md
+plan/ENHANCEMENT_TASKS_v2.md
+plan/ENHANCEMENT_TASKS_v3.md
+plan/ENHANCEMENT_TASKS_v4.md
+plan/ENHANCEMENT_TASKS_v5.md
+docs/superpowers/plans/2026-04-09-multi-model-compat-testing.md
+plan/PRD_v3.md
+plan/PRD_v4.md
+plan/PRD_v5.md
+plan/PRD_v6.md
+plan/test_strategy_v2.md
+plan/.scratch/hook_test.txt
+plan/.scratch/manifest_addendum_v2_v3.md
+plan/.scratch/manifest_addendum.md
+plan/.scratch/manifest_claude_code_tasks.md
+plan/.scratch/manifest_enh_tasks_v2.md
+plan/.scratch/manifest_enh_tasks_v3.md
+plan/.scratch/manifest_enh_tasks_v4_v5.md
+plan/.scratch/manifest_target_checklists.md
+plan/.scratch/manifest_test_strategy_v2.md
+plan/.scratch/manifest_test_strategy.md

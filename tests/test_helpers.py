@@ -9,7 +9,7 @@ def test_pdf_to_text_missing_dep_raises_import_error():
     import sys
     with patch.dict(sys.modules, {'pypdf': None}):
         from importlib import reload
-        import agentic_verifier.loaders.helpers as helpers_mod
+        import groundguard.loaders.helpers as helpers_mod
         reload(helpers_mod)
         with pytest.raises(ImportError, match="pip install agentic-verifier\\[loaders\\]"):
             helpers_mod.pdf_to_text("any_path.pdf")
@@ -21,7 +21,7 @@ def test_docx_to_text_missing_dep_raises_import_error():
     import sys
     with patch.dict(sys.modules, {'docx': None}):
         from importlib import reload
-        import agentic_verifier.loaders.helpers as helpers_mod
+        import groundguard.loaders.helpers as helpers_mod
         reload(helpers_mod)
         with pytest.raises(ImportError, match="pip install agentic-verifier\\[loaders\\]"):
             helpers_mod.docx_to_text("any_path.docx")

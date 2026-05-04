@@ -2,12 +2,12 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
-from agentic_verifier.models.result import VerificationResult, AtomicClaimResult
+from groundguard.models.result import VerificationResult, AtomicClaimResult
 
 if TYPE_CHECKING:
-    from agentic_verifier.models.internal import VerificationContext
-    from agentic_verifier.models.tier3 import Tier3ResponseModel
-    from agentic_verifier.loaders.chunker import Chunk
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.tier3 import Tier3ResponseModel
+    from groundguard.loaders.chunker import Chunk
 
 
 class ResultBuilder:

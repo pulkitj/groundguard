@@ -1,7 +1,7 @@
 """Tests for Tier 0 classifier — TDD items #1 and #2."""
 import pytest
-from agentic_verifier.core.classifier import parse_and_classify
-from agentic_verifier.models.internal import ClassifiedAtom
+from groundguard.core.classifier import parse_and_classify
+from groundguard.models.internal import ClassifiedAtom
 
 
 def test_single_sentence_with_decimal_stays_one_atom():

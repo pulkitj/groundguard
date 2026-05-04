@@ -1,8 +1,8 @@
 """Tests for Tier 1 authenticity check — TDD item #10."""
 import pytest
-from agentic_verifier.loaders.chunker import Chunk
-from agentic_verifier.exceptions import HallucinatedEvidenceError
-from agentic_verifier.tiers.tier1_authenticity import check_fuzzy
+from groundguard.loaders.chunker import Chunk
+from groundguard.exceptions import HallucinatedEvidenceError
+from groundguard.tiers.tier1_authenticity import check_fuzzy
 
 
 def _make_chunks(*texts) -> list[Chunk]:
@@ -50,7 +50,7 @@ def test_threshold_scaling_0_90_means_90_int():
 
     This boundary test confirms the int scale conversion is applied.
     """
-    from agentic_verifier.tiers.tier1_authenticity import check_fuzzy
+    from groundguard.tiers.tier1_authenticity import check_fuzzy
     # Score ~42: dissimilar enough that threshold 50 rejects it
     evidence = "the company reported gains"
     chunks = _make_chunks("revenue grew thirty percent quarterly")

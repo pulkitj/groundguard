@@ -1,7 +1,7 @@
 """TDD tests for verify_batch_async and verify_batch — T-28.
 
 Tests are written in RED state: verify_batch_async and verify_batch do not yet
-exist on agentic_verifier.core.verifier. All tests are expected to fail until
+exist on groundguard.core.verifier. All tests are expected to fail until
 Phase 9 implements those functions.
 
 Coverage:
@@ -17,15 +17,15 @@ from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
-from agentic_verifier.models.internal import (
+from groundguard.models.internal import (
     ClaimInput,
     RoutingDecision,
     SharedCostTracker,
     Tier2Result,
     VerificationContext,
 )
-from agentic_verifier.models.result import Source, VerificationResult
-from agentic_verifier.models.tier3 import (
+from groundguard.models.result import Source, VerificationResult
+from groundguard.models.tier3 import (
     AtomicVerification,
     ConceptualCoverage,
     SourceAttribution,
@@ -86,14 +86,14 @@ def _patch_pipeline(mocker, *, t3_side_effect=None, t3_return=None):
 
     Returns the AsyncMock for evaluate_async so callers can assert on it.
     """
-    from agentic_verifier.loaders.chunker import Chunk
+    from groundguard.loaders.chunker import Chunk
 
     mocker.patch(
-        "agentic_verifier.core.verifier.classifier.parse_and_classify",
+        "groundguard.core.verifier.classifier.parse_and_classify",
         return_value=[],
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.chunker.chunk_sources",
+        "groundguard.core.verifier.chunker.chunk_sources",
         return_value=[
             Chunk(
                 parent_source_id="doc.pdf",
@@ -108,7 +108,7 @@ def _patch_pipeline(mocker, *, t3_side_effect=None, t3_return=None):
     mock_loop = MagicMock()
     mock_loop.run_in_executor = AsyncMock(return_value=_t2_escalate())
     mocker.patch(
-        "agentic_verifier.core.verifier.asyncio.get_running_loop",
+        "groundguard.core.verifier.asyncio.get_running_loop",
         return_value=mock_loop,
     )
 
@@ -118,12 +118,12 @@ def _patch_pipeline(mocker, *, t3_side_effect=None, t3_return=None):
         mock_eval = AsyncMock(return_value=t3_return or _valid_t3())
 
     mocker.patch(
-        "agentic_verifier.core.verifier.tier3_evaluation.evaluate_async",
+        "groundguard.core.verifier.tier3_evaluation.evaluate_async",
         mock_eval,
     )
 
     mocker.patch(
-        "agentic_verifier.core.verifier.ResultBuilder.build_llm_result",
+        "groundguard.core.verifier.ResultBuilder.build_llm_result",
         return_value=VerificationResult(
             is_valid=True,
             overall_verdict="Verified.",
@@ -147,20 +147,20 @@ def _patch_pipeline(mocker, *, t3_side_effect=None, t3_return=None):
 
 async def test_batch_cost_cap_some_items_skipped(mocker):
     """TDD #3: verify_batch_async does NOT raise when cap is hit; excess items are SKIPPED_DUE_TO_COST."""
-    from agentic_verifier.core.verifier import verify_batch_async
-    from agentic_verifier.exceptions import VerificationCostExceededError
-    from agentic_verifier.loaders.chunker import Chunk
+    from groundguard.core.verifier import verify_batch_async
+    from groundguard.exceptions import VerificationCostExceededError
+    from groundguard.loaders.chunker import Chunk
 
     # Shared tracker with tight cap — first item costs 0.009, cap is 0.01
     # so item 1 may succeed, item 2 will exceed the cap.
     tracker = SharedCostTracker(max_spend=0.01)
 
     mocker.patch(
-        "agentic_verifier.core.verifier.classifier.parse_and_classify",
+        "groundguard.core.verifier.classifier.parse_and_classify",
         return_value=[],
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.chunker.chunk_sources",
+        "groundguard.core.verifier.chunker.chunk_sources",
         return_value=[
             Chunk(
                 parent_source_id="doc.pdf",
@@ -174,7 +174,7 @@ async def test_batch_cost_cap_some_items_skipped(mocker):
     mock_loop = MagicMock()
     mock_loop.run_in_executor = AsyncMock(return_value=_t2_escalate())
     mocker.patch(
-        "agentic_verifier.core.verifier.asyncio.get_running_loop",
+        "groundguard.core.verifier.asyncio.get_running_loop",
         return_value=mock_loop,
     )
 
@@ -188,11 +188,11 @@ async def test_batch_cost_cap_some_items_skipped(mocker):
         return _valid_t3()
 
     mocker.patch(
-        "agentic_verifier.core.verifier.tier3_evaluation.evaluate_async",
+        "groundguard.core.verifier.tier3_evaluation.evaluate_async",
         side_effect=_evaluate_with_cost,
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.ResultBuilder.build_llm_result",
+        "groundguard.core.verifier.ResultBuilder.build_llm_result",
         return_value=VerificationResult(
             is_valid=True,
             overall_verdict="Verified.",
@@ -232,16 +232,16 @@ async def test_batch_cost_cap_some_items_skipped(mocker):
 
 async def test_batch_cost_cap_does_not_raise(mocker):
     """TDD #3b: verify_batch_async is fail-contained — it never raises VerificationCostExceededError."""
-    from agentic_verifier.core.verifier import verify_batch_async
-    from agentic_verifier.exceptions import VerificationCostExceededError
-    from agentic_verifier.loaders.chunker import Chunk
+    from groundguard.core.verifier import verify_batch_async
+    from groundguard.exceptions import VerificationCostExceededError
+    from groundguard.loaders.chunker import Chunk
 
     mocker.patch(
-        "agentic_verifier.core.verifier.classifier.parse_and_classify",
+        "groundguard.core.verifier.classifier.parse_and_classify",
         return_value=[],
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.chunker.chunk_sources",
+        "groundguard.core.verifier.chunker.chunk_sources",
         return_value=[
             Chunk(
                 parent_source_id="doc.pdf",
@@ -255,7 +255,7 @@ async def test_batch_cost_cap_does_not_raise(mocker):
     mock_loop = MagicMock()
     mock_loop.run_in_executor = AsyncMock(return_value=_t2_escalate())
     mocker.patch(
-        "agentic_verifier.core.verifier.asyncio.get_running_loop",
+        "groundguard.core.verifier.asyncio.get_running_loop",
         return_value=mock_loop,
     )
 
@@ -264,11 +264,11 @@ async def test_batch_cost_cap_does_not_raise(mocker):
         return _valid_t3()
 
     mocker.patch(
-        "agentic_verifier.core.verifier.tier3_evaluation.evaluate_async",
+        "groundguard.core.verifier.tier3_evaluation.evaluate_async",
         side_effect=_expensive,
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.ResultBuilder.build_llm_result",
+        "groundguard.core.verifier.ResultBuilder.build_llm_result",
         return_value=VerificationResult(
             is_valid=True,
             overall_verdict="Verified.",
@@ -303,15 +303,15 @@ async def test_batch_cost_cap_does_not_raise(mocker):
 
 async def test_per_claim_model_override_is_respected(mocker):
     """TDD #11: ClaimInput.model overrides the batch default model for that item."""
-    from agentic_verifier.core.verifier import verify_batch_async
-    from agentic_verifier.loaders.chunker import Chunk
+    from groundguard.core.verifier import verify_batch_async
+    from groundguard.loaders.chunker import Chunk
 
     mocker.patch(
-        "agentic_verifier.core.verifier.classifier.parse_and_classify",
+        "groundguard.core.verifier.classifier.parse_and_classify",
         return_value=[],
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.chunker.chunk_sources",
+        "groundguard.core.verifier.chunker.chunk_sources",
         return_value=[
             Chunk(
                 parent_source_id="doc.pdf",
@@ -325,7 +325,7 @@ async def test_per_claim_model_override_is_respected(mocker):
     mock_loop = MagicMock()
     mock_loop.run_in_executor = AsyncMock(return_value=_t2_escalate())
     mocker.patch(
-        "agentic_verifier.core.verifier.asyncio.get_running_loop",
+        "groundguard.core.verifier.asyncio.get_running_loop",
         return_value=mock_loop,
     )
 
@@ -337,11 +337,11 @@ async def test_per_claim_model_override_is_respected(mocker):
 
     mock_eval = AsyncMock(side_effect=_capture_ctx)
     mocker.patch(
-        "agentic_verifier.core.verifier.tier3_evaluation.evaluate_async",
+        "groundguard.core.verifier.tier3_evaluation.evaluate_async",
         mock_eval,
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.ResultBuilder.build_llm_result",
+        "groundguard.core.verifier.ResultBuilder.build_llm_result",
         return_value=VerificationResult(
             is_valid=True,
             overall_verdict="Verified.",
@@ -384,15 +384,15 @@ async def test_per_claim_model_override_is_respected(mocker):
 
 async def test_per_claim_model_none_inherits_batch_default(mocker):
     """TDD #11b: ClaimInput.model=None means the batch-level model is used."""
-    from agentic_verifier.core.verifier import verify_batch_async
-    from agentic_verifier.loaders.chunker import Chunk
+    from groundguard.core.verifier import verify_batch_async
+    from groundguard.loaders.chunker import Chunk
 
     mocker.patch(
-        "agentic_verifier.core.verifier.classifier.parse_and_classify",
+        "groundguard.core.verifier.classifier.parse_and_classify",
         return_value=[],
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.chunker.chunk_sources",
+        "groundguard.core.verifier.chunker.chunk_sources",
         return_value=[
             Chunk(
                 parent_source_id="doc.pdf",
@@ -406,7 +406,7 @@ async def test_per_claim_model_none_inherits_batch_default(mocker):
     mock_loop = MagicMock()
     mock_loop.run_in_executor = AsyncMock(return_value=_t2_escalate())
     mocker.patch(
-        "agentic_verifier.core.verifier.asyncio.get_running_loop",
+        "groundguard.core.verifier.asyncio.get_running_loop",
         return_value=mock_loop,
     )
 
@@ -417,11 +417,11 @@ async def test_per_claim_model_none_inherits_batch_default(mocker):
         return _valid_t3()
 
     mocker.patch(
-        "agentic_verifier.core.verifier.tier3_evaluation.evaluate_async",
+        "groundguard.core.verifier.tier3_evaluation.evaluate_async",
         side_effect=_capture,
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.ResultBuilder.build_llm_result",
+        "groundguard.core.verifier.ResultBuilder.build_llm_result",
         return_value=VerificationResult(
             is_valid=True,
             overall_verdict="Verified.",
@@ -448,7 +448,7 @@ async def test_per_claim_model_none_inherits_batch_default(mocker):
 
 def test_verify_batch_raises_in_running_event_loop():
     """verify_batch wraps asyncio.run() which cannot be called from a running loop."""
-    from agentic_verifier.core.verifier import verify_batch
+    from groundguard.core.verifier import verify_batch
 
     inputs = [_make_claim_input()]
 
@@ -470,7 +470,7 @@ def test_verify_batch_raises_in_running_event_loop():
 
 async def test_verify_batch_async_rejects_max_spend_in_kwargs():
     """verify_batch_async raises TypeError when max_spend appears in both signature and **kwargs."""
-    from agentic_verifier.core.verifier import verify_batch_async
+    from groundguard.core.verifier import verify_batch_async
 
     inputs = [_make_claim_input()]
 
@@ -486,7 +486,7 @@ async def test_verify_batch_async_rejects_max_spend_in_kwargs():
 
 async def test_verify_batch_async_returns_list_of_verification_results(mocker):
     """verify_batch_async returns list[VerificationResult] with same length as inputs."""
-    from agentic_verifier.core.verifier import verify_batch_async
+    from groundguard.core.verifier import verify_batch_async
 
     _patch_pipeline(mocker)
 
@@ -501,7 +501,7 @@ async def test_verify_batch_async_returns_list_of_verification_results(mocker):
 
 def test_verify_batch_returns_list_of_verification_results(mocker):
     """verify_batch (sync wrapper) returns list[VerificationResult]."""
-    from agentic_verifier.core.verifier import verify_batch
+    from groundguard.core.verifier import verify_batch
 
     _patch_pipeline(mocker)
 
@@ -515,7 +515,7 @@ def test_verify_batch_returns_list_of_verification_results(mocker):
 
 async def test_verify_batch_async_empty_inputs_returns_empty_list(mocker):
     """verify_batch_async with an empty input list returns []."""
-    from agentic_verifier.core.verifier import verify_batch_async
+    from groundguard.core.verifier import verify_batch_async
 
     results = await verify_batch_async(inputs=[], model="gpt-4o-mini", max_spend=1.0)
     assert results == []
@@ -527,15 +527,15 @@ async def test_verify_batch_async_empty_inputs_returns_empty_list(mocker):
 
 async def test_mid_batch_cost_exhaustion(mocker):
     """T-54: max_spend sized so first ~2 items exhaust budget; remaining return SKIPPED_DUE_TO_COST."""
-    from agentic_verifier.core.verifier import verify_batch_async
-    from agentic_verifier.loaders.chunker import Chunk
+    from groundguard.core.verifier import verify_batch_async
+    from groundguard.loaders.chunker import Chunk
 
     mocker.patch(
-        "agentic_verifier.core.verifier.classifier.parse_and_classify",
+        "groundguard.core.verifier.classifier.parse_and_classify",
         return_value=[],
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.chunker.chunk_sources",
+        "groundguard.core.verifier.chunker.chunk_sources",
         return_value=[
             Chunk(parent_source_id="doc.pdf", text_content="Revenue was $5M.", char_start=0, char_end=16)
         ],
@@ -544,7 +544,7 @@ async def test_mid_batch_cost_exhaustion(mocker):
     mock_loop = MagicMock()
     mock_loop.run_in_executor = AsyncMock(return_value=_t2_escalate())
     mocker.patch(
-        "agentic_verifier.core.verifier.asyncio.get_running_loop",
+        "groundguard.core.verifier.asyncio.get_running_loop",
         return_value=mock_loop,
     )
 
@@ -557,11 +557,11 @@ async def test_mid_batch_cost_exhaustion(mocker):
         return _valid_t3()
 
     mocker.patch(
-        "agentic_verifier.core.verifier.tier3_evaluation.evaluate_async",
+        "groundguard.core.verifier.tier3_evaluation.evaluate_async",
         side_effect=_evaluate_with_cost,
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.ResultBuilder.build_llm_result",
+        "groundguard.core.verifier.ResultBuilder.build_llm_result",
         return_value=VerificationResult(
             is_valid=True,
             overall_verdict="Verified.",

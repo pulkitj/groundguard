@@ -6,25 +6,25 @@ import asyncio
 import litellm
 import pydantic
 
-from agentic_verifier._log import logger
-from agentic_verifier.core import classifier
-from agentic_verifier.exceptions import (
+from groundguard._log import logger
+from groundguard.core import classifier
+from groundguard.exceptions import (
     ParseError,
     VerificationCostExceededError,
     VerificationFailedError,
 )
-from agentic_verifier.loaders import chunker
-from agentic_verifier.models.builder import ResultBuilder
-from agentic_verifier.models.internal import (
+from groundguard.loaders import chunker
+from groundguard.models.builder import ResultBuilder
+from groundguard.models.internal import (
     ClaimInput,
     RoutingDecision,
     SharedCostTracker,
     VerificationContext,
 )
-from agentic_verifier.models.result import VerificationResult
-from agentic_verifier.tiers import tier1_authenticity, tier2_semantic, tier3_evaluation
+from groundguard.models.result import VerificationResult
+from groundguard.tiers import tier1_authenticity, tier2_semantic, tier3_evaluation
 
-from agentic_verifier._constants import TRANSIENT_LITELLM_ERRORS  # FIX-02: unified tuple
+from groundguard._constants import TRANSIENT_LITELLM_ERRORS  # FIX-02: unified tuple
 
 
 def verify(

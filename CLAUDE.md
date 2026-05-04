@@ -6,7 +6,50 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-**agentic-verifier** is a Python middleware library (MIT, LLM-agnostic) that verifies AI-generated text is factually grounded in developer-provided source documents. It is not a RAG pipeline, web scraper, or agentic framework — it is a deterministic assert layer for document-intensive workflows.
+**groundguard** is a Python middleware library (MIT, LLM-agnostic) that verifies AI-generated text is factually grounded in developer-provided source documents. It is not a RAG pipeline, web scraper, or agentic framework — it is a deterministic assert layer for document-intensive workflows.
+
+---
+
+## Execution Process Rules
+
+These rules were established after a code review in session 5 found bugs caused by skipping them. **Do not shortcut these.**
+
+### Strict Role Separation (ORCHESTRATOR.md §3)
+
+Every implementation task requires **separate agent calls** for each role. Never combine into one:
+
+```text
+1. Test Writer Agent   → writes RED test file, commits to main (isolation: none)
+2. Coder Agent         → implements in worktree until GREEN (isolation: "worktree")
+3. Code Reviewer Agent → reviews diff against spec (subagent_type: "Explore")
+4. Fix Agent           → applies reviewer fixes if needed (isolation: "worktree")
+5. Test Runner         → confirms GREEN after fixes
+6. Git Commit Agent    → merges worktree to main
+```
+
+**Why:** Session 5 collapsed all 6 roles into 1 combined agent per module. The Code Reviewer was skipped entirely. This allowed 5 bugs to reach main undetected (wrong default values, incorrect routing logic, missing exception types, hardcoded field values).
+
+### Code Reviewer Is Mandatory
+
+After every Coder Agent, dispatch a Code Reviewer (`subagent_type: "Explore"`) with:
+
+- The `git diff` of the branch
+- The relevant spec section from `plan/engineering_design_update.md`
+- The critical constraints checklist from CLAUDE.md
+
+Do not proceed to the next task if the reviewer returns `approved: false`.
+
+### Worktree Isolation for Coders
+
+Every Coder Agent call must use `isolation: "worktree"`. The Test Writer commits to `main` first; the Coder's worktree branches from that commit automatically.
+
+### Parallel Dispatch — Count Before Sending
+
+Before sending a message with multiple parallel `Agent` calls, count the expected agents and verify all are present. Session 5 missed Worker F (Result Builder) in the first parallel wave, causing it to run solo later instead of in parallel.
+
+### Context Injection — No Placeholder Left Behind
+
+Every agent prompt must have all `[paste ...]` markers replaced with verbatim spec content before dispatching. An unresolved placeholder causes the agent to hallucinate silently (ORCHESTRATOR.md §9).
 
 ---
 
@@ -122,164 +165,6 @@ pytest -m "not llm and not loaders and not langchain" --cov=agentic_verifier --c
 
 ---
 
-## Build Status (Session 12 — 2026-04-11)
-
-**All phases 0–17 complete (code tasks). 119 fast tests passing. Real Suite 18/18 green against qwen3:30b. Compat Ollama baseline: 2/3 PASS (qwen3.5:9b pending). NIM baseline T-72 COMPLETE: 7/16 PASS cs01. Gemini pending.**
-
-Last commit: (session 12 — api_base param added; anthropic-via-ollama compat entry; Ollama skip fix; docx import lint fix)
-
-| Phase | Content | Status |
-| --- | --- | --- |
-| 0–15 | All phases | ✅ Done |
-| Real Suite | `tests/integration/test_real_suite.py` — 18 fixtures | ✅ 18/18 PASS against `ollama/qwen3:30b` |
-| Phase 16 | Multi-model compatibility — T-60 to T-66 | ✅ Done (2026-04-08) |
-| Phase 17 | Multi-endpoint compat testing — T-67 to T-74 | ✅ Code done; ✅ T-71 Ollama 4/4×2 PASS; ✅ T-72 NIM 7/16 cs01 PASS; ⏳ Gemini pending |
-
-### Phase 17 Summary (Session 12 — API_BASE + ANTHROPIC-VIA-OLLAMA)
-
-#### Session 12 changes (2026-04-11)
-
-Four changes:
-
-1. **`api_base` parameter added to `verify()` / `averify()`** — `api_base: str | None = None` propagates through `VerificationContext` and is injected into `base_kwargs` in `tier3_evaluation.py`. Enables redirecting any provider-prefixed model string to a custom endpoint (e.g. `anthropic/qwen3:14b` + `api_base="http://localhost:11434"` → Ollama's Anthropic-compatible `/api/messages` endpoint).
-
-2. **`ANTHROPIC_VIA_OLLAMA_MODELS` added to `compat_models.py`** — one entry: `anthropic/qwen3:14b` with `api_base="http://localhost:11434"`. Tests ANTHROPIC_ADAPTER response handling end-to-end against a local model without real Anthropic API keys. `CompatModel` dataclass gains `api_base: str | None = None` field; all real suite functions and compat wrappers forward it.
-
-3. **Ollama skip fix in `conftest.py`** — old guard `if pulled and tag not in pulled` silently ran tests when Ollama was unreachable (empty `pulled` set made the condition always False). Fixed: explicit `if not pulled: pytest.skip("Ollama not running...")` before the tag check.
-
-4. **`docx` import lint fix** — `from docx import Document` in `loader_fixtures` now has `# type: ignore[import-not-found]` since `python-docx` is an optional extra not visible to the type checker.
-
-#### Session 11 changes (2026-04-10)
-
-Three changes based on project direction:
-
-1. **Compat suite raised to full quality bar** — `test_compat_suite.py` now runs all 18 real suite fixtures (T-34 through T-51) against every compat model. Replaced 4 reduced smoke tests (CS-01 through CS-04) with 18 wrapper functions delegating to `test_real_suite`. No duplication — contract changes in real suite propagate automatically. Failures are classified by humans as pipeline bug vs. model limitation; the test bar is not lowered to mask either.
-
-2. **phi-4-mini and granite-3.3-8b moved from NIM → Ollama** — Both models will be run locally via Ollama once pulled. Added `ollama/phi4-mini` and `ollama/granite3.3:8b` to `OLLAMA_MODELS`. On Ollama these models use `OLLAMA_ADAPTER` (no `json_object` downgrade needed — Ollama supports `json_schema` natively via grammar). The NIM `JSON_OBJECT_ADAPTER` and its registry entry remain for ad-hoc NIM use.
-
-3. **`nvidia_nim/nvidia/nemotron-3-nano-30b-a3b` added to NIM suite** — Same `chat_template_kwargs + reasoning_budget` pattern as nemotron-super (confirmed via NVIDIA sample code). Uses `NEMOTRON_NIM_ADAPTER`. Registry entry `("nvidia_nim/nvidia/nemotron-3-nano", NEMOTRON_NIM_ADAPTER)` added. One new fast test: `test_nvidia_nim_nemotron_nano_routes_to_nemotron_adapter`.
-
-Current compat model counts: 5 Ollama + 15 NIM + 1 Gemini + 1 Anthropic-via-Ollama = 22 models
-
-Compat suite: 18 fixtures × 22 models = 396 parametrized cases (auto-skipped when env key absent or Ollama model not pulled).
-
-#### T-72 NIM baseline (Session 10 — 2026-04-10)
-
-Four fixes applied during NIM runs:
-
-1. **`litellm.completion_cost()` raises for unknown NIM models** — `nvidia_nim/` models are absent from litellm's pricing registry. Fix: wrapped in `try/except` in both sync and async paths; cost = 0.0 for unknown models.
-2. **`NIM_THINKING_ADAPTER`** — clean reasoning_content fallback for NIM thinking models (kimi-k2, gpt-oss, deepseek-v3.2) without Ollama-specific `extra_body.options` / `keep_alive`.
-3. **`NEMOTRON_NIM_ADAPTER`** — Nemotron-Super hangs without `extra_body.chat_template_kwargs + reasoning_budget`. New adapter injects these.
-4. **`JSON_OBJECT_ADAPTER`** — phi-4-mini only supports `json_object`, not `json_schema`. New adapter downgrades `response_format` type.
-5. Fixed model ID typos: `deepseek-v3.2` (dot not underscore), `granite-3.3-8b-instruct` (dots).
-6. Expanded NIM registry from 7 → 16 models (added deepseek-v3.2, nemotron-super, gemma4, kimi-k2, mistral-small-4, phi-4-mini, granite-3.3-8b, gpt-oss-120b, minimax-m2.5).
-
-#### NIM cs01 results
-
-| Model | cs01 | Notes |
-| --- | --- | --- |
-| `llama-3.3-70b-instruct` | ✅ 4/4 full suite | |
-| `deepseek-v3.2` | ✅ | ~47s |
-| `gemma-4-31b-it` | ✅ | ~10s |
-| `mistral-small-4-119b` | ✅ | ~5s |
-| `gpt-oss-120b` | ✅ | ~5s |
-| `minimax-m2.5` | ✅ | ~10s |
-| `kimi-k2-thinking` | ✅ | ~138s (thinking model) |
-| `nemotron-super-120b` | ⏳ server timeout | Code fix ready; awaiting server availability |
-| `nemotron-nano-30b` | ⏳ not yet run | Added session 11 |
-| `deepseek-r1` | ❌ 410 Gone | EOL 2026-01-26 |
-| `nemotron-70b` | ❌ 404 | No account access |
-| `qwen25-72b` | ❌ 404 | Unavailable |
-| `mixtral-8x22b` | ❌ timeout | Server unresponsive |
-| `nemotron-340b` | ❌ UnsupportedParams | No `response_format` support |
-| `mistral-small-24b` | ❌ 400 | `json_schema` not supported |
-
-Fast suite: **119 tests** passing.
-
-#### Session 9 adapter fixes (OLLAMA_ADAPTER `build_kwargs`)
-
-Three bugs found during Ollama runs:
-
-1. **litellm routes `ollama/` → `/api/generate`** instead of `/api/chat` — remapped to `ollama_chat/`.
-2. **Thinking-capable models exhaust 4K default context** — `_ollama_build_kwargs` sets `num_ctx=16384`.
-3. **`keep_alive=300`** added to hold model in VRAM during sequential test calls.
-
-Run compat suite (keys auto-determine which models execute):
-
-```bash
-pytest -m compat -v --timeout=300 -p no:cov
-```
-
-Run full real suite against a NIM model:
-
-```bash
-LLM_TEST_MODEL=nvidia_nim/meta/llama-3.3-70b-instruct \
-  pytest tests/integration/test_real_suite.py -m llm -v --timeout=300 -p no:cov
-```
-
-### Phase 16 Summary (Session 7 — COMPLETE)
-
-Phase 16 delivered 7 tasks (T-60 through T-66) adding formal multi-model compatibility:
-
-- **T-60** — `tests/test_adapters.py`: 17 RED tests for adapter registry (routing + post_process)
-- **T-61** — `adapters/registry.py`: `ModelAdapter` dataclass, `get_adapter()` prefix lookup, 5 concrete adapters (DEFAULT, OLLAMA, OPENAI_REASONING, ANTHROPIC, GOOGLE)
-- **T-62** — `tier3_evaluation.py`: wired registry in; removed `_extra_kwargs()` + `think=False`; `parse_response(response, model)` now routes via adapter
-- **T-63** — Fast suite gap tests: think-tag stripping, `choices=[]` → `ParseError`, `auto_chunk=False`, async cost cap; 3 existing test reliability fixes
-- **T-64** — Integration contract corrections: T-36/T-43 relaxed to soft `VERIFIED or UNVERIFIABLE`; T-39 softened to `!= "VERIFIED"`; T-49 `sources_used` restored as soft assertion
-- **T-65** — `conftest.py` `loader_fixtures`: generates `sample.pdf` + `sample.docx` on-demand via fpdf2/python-docx
-- **T-66** — Exponential backoff wrappers (`_acompletion_with_backoff`, `_completion_with_backoff`) for transient LiteLLM errors (1s base, 2× multiplier, 30s max, 3 attempts)
-
-Run full integration suite:
-
-```bash
-pytest tests/integration/ -m llm -v --timeout=300
-```
-
----
-
-## Execution Process Rules
-
-These rules were established after a code review in session 5 found bugs caused by skipping them. **Do not shortcut these.**
-
-### Strict Role Separation (ORCHESTRATOR.md §3)
-
-Every implementation task requires **separate agent calls** for each role. Never combine into one:
-
-```text
-1. Test Writer Agent   → writes RED test file, commits to main (isolation: none)
-2. Coder Agent         → implements in worktree until GREEN (isolation: "worktree")
-3. Code Reviewer Agent → reviews diff against spec (subagent_type: "Explore")
-4. Fix Agent           → applies reviewer fixes if needed (isolation: "worktree")
-5. Test Runner         → confirms GREEN after fixes
-6. Git Commit Agent    → merges worktree to main
-```
-
-**Why:** Session 5 collapsed all 6 roles into 1 combined agent per module. The Code Reviewer was skipped entirely. This allowed 5 bugs to reach main undetected (wrong default values, incorrect routing logic, missing exception types, hardcoded field values).
-
-### Code Reviewer Is Mandatory
-
-After every Coder Agent, dispatch a Code Reviewer (`subagent_type: "Explore"`) with:
-
-- The `git diff` of the branch
-- The relevant spec section from `plan/engineering_design_update.md`
-- The critical constraints checklist from CLAUDE.md
-
-Do not proceed to the next task if the reviewer returns `approved: false`.
-
-### Worktree Isolation for Coders
-
-Every Coder Agent call must use `isolation: "worktree"`. The Test Writer commits to `main` first; the Coder's worktree branches from that commit automatically.
-
-### Parallel Dispatch — Count Before Sending
-
-Before sending a message with multiple parallel `Agent` calls, count the expected agents and verify all are present. Session 5 missed Worker F (Result Builder) in the first parallel wave, causing it to run solo later instead of in parallel.
-
-### Context Injection — No Placeholder Left Behind
-
-Every agent prompt must have all `[paste ...]` markers replaced with verbatim spec content before dispatching. An unresolved placeholder causes the agent to hallucinate silently (ORCHESTRATOR.md §9).
-
----
-
 ## Pipeline Architecture
 
 The pipeline is a sequential 4-tier chain. `core/verifier.py` (stub only — Phase 9 implements it) is the orchestrator.
@@ -363,15 +248,6 @@ Chunker (loaders/chunker.py):    Chunk  ← defined here, not in models/
 **`auto_chunk=False`** — recommended for large-context models (Gemini 1.5 Pro, Claude 3.5+). BM25 can silently drop low-scoring chunks that contain negating context ("Lost Context Problem").
 
 **Exception contract** — `verify()` / `averify()` are fail-loud (all exceptions propagate except `ParseError` → returned as `status="PARSE_ERROR"`). `verify_batch_async()` is fail-contained (all exceptions absorbed per item). This asymmetry is intentional — see `plan/engineering_design_update.md` §8.
-
----
-
-## Known Open Issues
-
-All Phase 16 tasks are complete. No open issues. Remaining deferred items:
-
-- **T-59** — PyPI publish: deferred, requires package registry credentials.
-- **Real Suite re-run on alternative models** — contracts now use hybrid hard/soft structure (T-64) but have only been validated against `ollama/qwen3:30b`. A run against GPT-4o or Claude 3.5 Sonnet is recommended before publishing.
 
 ---
 

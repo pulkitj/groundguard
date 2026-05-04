@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agentic-verifier"
+name = "groundguard"
 version = "0.1.0"
 description = "LLM-agnostic deterministic assert layer for AI agent outputs"
 license = { text = "MIT" }
@@ -40,12 +40,12 @@ markers = [
     "langchain: marks tests requiring optional langchain extras",
     "compat: marks tests as multi-model compatibility smoke tests (parametrized across all compat models)",
 ]
-addopts = "--cov=agentic_verifier --cov-report=term-missing"
+addopts = "--cov=groundguard --cov-report=term-missing"
 timeout = 300
 
 [tool.coverage.run]
-source = ["agentic_verifier"]
+source = ["groundguard"]
 omit = ["*/tests/*"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["agentic_verifier"]
+packages = ["groundguard"]

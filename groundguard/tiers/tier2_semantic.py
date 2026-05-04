@@ -4,12 +4,12 @@ from typing import TYPE_CHECKING
 
 from rank_bm25 import BM25Okapi
 
-from agentic_verifier.models.internal import RoutingDecision, Tier2Result
-from agentic_verifier._log import logger
+from groundguard.models.internal import RoutingDecision, Tier2Result
+from groundguard._log import logger
 
 if TYPE_CHECKING:
-    from agentic_verifier.loaders.chunker import Chunk
-    from agentic_verifier.models.internal import VerificationContext
+    from groundguard.loaders.chunker import Chunk
+    from groundguard.models.internal import VerificationContext
 
 
 def route_claim(ctx: VerificationContext, all_chunks: list[Chunk]) -> Tier2Result:

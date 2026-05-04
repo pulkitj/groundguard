@@ -8,17 +8,17 @@ from typing import TYPE_CHECKING, Any
 
 import litellm
 
-from agentic_verifier.models.tier3 import Tier3ResponseModel
-from agentic_verifier.exceptions import ParseError
-from agentic_verifier._log import logger
-from agentic_verifier.adapters.registry import get_adapter
+from groundguard.models.tier3 import Tier3ResponseModel
+from groundguard.exceptions import ParseError
+from groundguard._log import logger
+from groundguard.adapters.registry import get_adapter
 
 if TYPE_CHECKING:
-    from agentic_verifier.models.internal import VerificationContext
-    from agentic_verifier.loaders.chunker import Chunk
+    from groundguard.models.internal import VerificationContext
+    from groundguard.loaders.chunker import Chunk
 
 
-from agentic_verifier._constants import TRANSIENT_LITELLM_ERRORS  # FIX-02: unified tuple (adds Timeout)
+from groundguard._constants import TRANSIENT_LITELLM_ERRORS  # FIX-02: unified tuple (adds Timeout)
 
 # BUG-03: 5 attempts gives max cumulative backoff of 1+2+4+8 = 15s,
 # which covers typical cloud rate-limit reset windows.

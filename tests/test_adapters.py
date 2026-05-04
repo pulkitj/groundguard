@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock
 
-from agentic_verifier.adapters.registry import (
+from groundguard.adapters.registry import (
     get_adapter,
     ModelAdapter,
     OLLAMA_ADAPTER,
@@ -15,7 +15,7 @@ from agentic_verifier.adapters.registry import (
     OPENAI_REASONING_ADAPTER,
     DEFAULT_ADAPTER,
 )
-from agentic_verifier.exceptions import VerificationFailedError
+from groundguard.exceptions import VerificationFailedError
 
 
 # ---------------------------------------------------------------------------
@@ -190,26 +190,26 @@ def test_json_object_adapter_sets_response_format():
 
 def test_strip_fences_handles_conversational_pretext():
     """BUG-01: fence preceded by conversational text is still extracted."""
-    from agentic_verifier.adapters.registry import _strip_fences
+    from groundguard.adapters.registry import _strip_fences
     content = 'Here is the JSON output:\n```json\n{"key": "value"}\n```\nLet me know if helpful!'
     assert _strip_fences(content) == '{"key": "value"}'
 
 
 def test_strip_fences_handles_posttext_only():
     """BUG-01: fence followed by conversational text is still extracted."""
-    from agentic_verifier.adapters.registry import _strip_fences
+    from groundguard.adapters.registry import _strip_fences
     content = '```json\n{"key": "value"}\n```\nThat covers all five parts.'
     assert _strip_fences(content) == '{"key": "value"}'
 
 
 def test_strip_fences_no_fence_returns_content():
     """BUG-01: plain JSON without fences is returned as-is."""
-    from agentic_verifier.adapters.registry import _strip_fences
+    from groundguard.adapters.registry import _strip_fences
     assert _strip_fences('{"key": "value"}') == '{"key": "value"}'
 
 
 def test_strip_fences_non_json_fence_falls_through():
     """BUG-01: fenced non-JSON content falls through to raw content (not stripped to code)."""
-    from agentic_verifier.adapters.registry import _strip_fences
+    from groundguard.adapters.registry import _strip_fences
     result = _strip_fences('```python\nprint("hello")\n```')
     assert not result.startswith('print')

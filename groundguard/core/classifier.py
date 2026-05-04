@@ -1,7 +1,7 @@
 """Tier 0 classifier — rules-based Extractive/Inferential atom classification."""
 from __future__ import annotations
 import re
-from agentic_verifier.models.internal import ClassifiedAtom
+from groundguard.models.internal import ClassifiedAtom
 
 INFERENTIAL_SIGNALS = {
     "trend", "trajectory", "suggests", "indicates", "on track", "at risk",

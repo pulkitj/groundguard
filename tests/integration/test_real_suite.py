@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_verifier.core.verifier import verify, verify_batch_async
-from agentic_verifier.exceptions import HallucinatedEvidenceError
-from agentic_verifier.models.internal import ClaimInput
-from agentic_verifier.models.result import Source
+from groundguard.core.verifier import verify, verify_batch_async
+from groundguard.exceptions import HallucinatedEvidenceError
+from groundguard.models.internal import ClaimInput
+from groundguard.models.result import Source
 
 VALID_STATUSES = {"VERIFIED", "CONTRADICTED", "UNVERIFIABLE", "PARSE_ERROR", "ERROR", "SKIPPED_DUE_TO_COST"}
 

@@ -7,12 +7,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agentic_verifier.core.verifier import verify
-from agentic_verifier.exceptions import ParseError
-from agentic_verifier.loaders.chunker import Chunk
-from agentic_verifier.models.internal import RoutingDecision
-from agentic_verifier.models.result import Source, VerificationResult
-from agentic_verifier.models.tier3 import (
+from groundguard.core.verifier import verify
+from groundguard.exceptions import ParseError
+from groundguard.loaders.chunker import Chunk
+from groundguard.models.internal import RoutingDecision
+from groundguard.models.result import Source, VerificationResult
+from groundguard.models.tier3 import (
     AtomicVerification,
     ConceptualCoverage,
     SourceAttribution,
@@ -72,17 +72,17 @@ def _verified_result() -> VerificationResult:
 def _patch_base(mocker):
     """Mock out classifier and chunker so pipeline focuses on tier2+."""
     mocker.patch(
-        "agentic_verifier.core.verifier.classifier.parse_and_classify",
+        "groundguard.core.verifier.classifier.parse_and_classify",
         return_value=[],
     )
     mocker.patch(
-        "agentic_verifier.core.verifier.chunker.chunk_sources",
+        "groundguard.core.verifier.chunker.chunk_sources",
         return_value=[_CHUNK],
     )
 
 
 def _skip_llm_tier2_result():
-    from agentic_verifier.models.internal import Tier2Result as _T2R  # noqa: PLC0415
+    from groundguard.models.internal import Tier2Result as _T2R  # noqa: PLC0415
     return _T2R(
         decision=RoutingDecision.SKIP_LLM_HIGH_CONFIDENCE,
         top_k_chunks=[_CHUNK],
@@ -91,7 +91,7 @@ def _skip_llm_tier2_result():
 
 
 def _escalate_tier2_result():
-    from agentic_verifier.models.internal import Tier2Result as _T2R  # noqa: PLC0415
+    from groundguard.models.internal import Tier2Result as _T2R  # noqa: PLC0415
     return _T2R(
         decision=RoutingDecision.ESCALATE_TO_LLM,
         top_k_chunks=[_CHUNK],
@@ -104,15 +104,15 @@ def _escalate_tier2_result():
 # ---------------------------------------------------------------------------
 
 def test_logger_has_no_handlers_by_default():
-    """#21: The 'agentic_verifier' logger must never attach its own handlers.
+    """#21: The 'groundguard' logger must never attach its own handlers.
 
     The library is middleware — handler configuration is the host application's
     responsibility. We assert the logger has an empty handler list so that
     records propagate (or are silently discarded) based on the host's log config.
     """
-    lib_logger = logging.getLogger("agentic_verifier")
+    lib_logger = logging.getLogger("groundguard")
     assert lib_logger.handlers == [], (
-        "Library must not attach handlers to 'agentic_verifier' logger — "
+        "Library must not attach handlers to 'groundguard' logger — "
         f"found: {lib_logger.handlers}"
     )
 
@@ -125,16 +125,16 @@ def test_boundary_id_in_all_records_and_no_sensitive_content(mocker, caplog):
     """#22: Every log record contains the call's boundary_id; claim/source text absent."""
     _patch_base(mocker)
     mocker.patch(
-        "agentic_verifier.core.verifier.tier2_semantic.route_claim",
+        "groundguard.core.verifier.tier2_semantic.route_claim",
         return_value=_escalate_tier2_result(),
     )
     t3_model = _valid_t3()
     mocker.patch(
-        "agentic_verifier.core.verifier.tier3_evaluation.evaluate",
+        "groundguard.core.verifier.tier3_evaluation.evaluate",
         return_value=t3_model,
     )
     mocker.patch(
-        "agentic_verifier.models.builder.ResultBuilder.build_llm_result",
+        "groundguard.models.builder.ResultBuilder.build_llm_result",
         return_value=VerificationResult(
             is_valid=True,
             overall_verdict="Verified",
@@ -149,7 +149,7 @@ def test_boundary_id_in_all_records_and_no_sensitive_content(mocker, caplog):
         ),
     )
 
-    with caplog.at_level(logging.DEBUG, logger="agentic_verifier"):
+    with caplog.at_level(logging.DEBUG, logger="groundguard"):
         verify(claim=CLAIM, sources=SOURCES)
 
     # Must have at least one log record (the INFO summary from verifier.py)
@@ -200,15 +200,15 @@ def test_log_levels_by_scenario(scenario, mocker, caplog):
     if scenario == "lexical_pass":
         # (a) Tier 2 SKIP_LLM_HIGH_CONFIDENCE — should emit exactly 1 INFO, 0 WARNING, 0 ERROR
         mocker.patch(
-            "agentic_verifier.core.verifier.tier2_semantic.route_claim",
+            "groundguard.core.verifier.tier2_semantic.route_claim",
             return_value=_skip_llm_tier2_result(),
         )
         mocker.patch(
-            "agentic_verifier.models.builder.ResultBuilder.build_lexical_pass",
+            "groundguard.models.builder.ResultBuilder.build_lexical_pass",
             return_value=_verified_result(),
         )
 
-        with caplog.at_level(logging.DEBUG, logger="agentic_verifier"):
+        with caplog.at_level(logging.DEBUG, logger="groundguard"):
             verify(claim=CLAIM, sources=SOURCES)
 
         info_records = [r for r in caplog.records if r.levelno == logging.INFO]
@@ -229,7 +229,7 @@ def test_log_levels_by_scenario(scenario, mocker, caplog):
     elif scenario == "retry_then_succeed":
         # (b) Tier 3 retries on first invalid JSON — WARNING "attempt 1/2" from tier3_evaluation
         mocker.patch(
-            "agentic_verifier.core.verifier.tier2_semantic.route_claim",
+            "groundguard.core.verifier.tier2_semantic.route_claim",
             return_value=_escalate_tier2_result(),
         )
 
@@ -251,7 +251,7 @@ def test_log_levels_by_scenario(scenario, mocker, caplog):
         mocker.patch("litellm.completion", side_effect=mock_completion)
         mocker.patch("litellm.completion_cost", return_value=0.001)
 
-        with caplog.at_level(logging.DEBUG, logger="agentic_verifier"):
+        with caplog.at_level(logging.DEBUG, logger="groundguard"):
             verify(claim=CLAIM, sources=SOURCES)
 
         assert call_count[0] == 2, "Expected exactly 2 litellm.completion calls (retry)"
@@ -270,15 +270,15 @@ def test_log_levels_by_scenario(scenario, mocker, caplog):
     elif scenario == "double_parse_fail":
         # (c) evaluate() raises ParseError → verifier catches it → ERROR + INFO summary
         mocker.patch(
-            "agentic_verifier.core.verifier.tier2_semantic.route_claim",
+            "groundguard.core.verifier.tier2_semantic.route_claim",
             return_value=_escalate_tier2_result(),
         )
         mocker.patch(
-            "agentic_verifier.core.verifier.tier3_evaluation.evaluate",
+            "groundguard.core.verifier.tier3_evaluation.evaluate",
             side_effect=ParseError("Mocked double parse failure"),
         )
 
-        with caplog.at_level(logging.DEBUG, logger="agentic_verifier"):
+        with caplog.at_level(logging.DEBUG, logger="groundguard"):
             result = verify(claim=CLAIM, sources=SOURCES)
 
         assert result.status == "PARSE_ERROR", (

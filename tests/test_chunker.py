@@ -1,8 +1,8 @@
 """Tests for auto-chunker — TDD items #5, #14, #17."""
 import pytest
-from agentic_verifier.loaders.chunker import Chunk, chunk_sources, wrap_as_chunks
-from agentic_verifier.models.result import Source
-from agentic_verifier.models.internal import VerificationContext
+from groundguard.loaders.chunker import Chunk, chunk_sources, wrap_as_chunks
+from groundguard.models.result import Source
+from groundguard.models.internal import VerificationContext
 
 
 def _make_ctx(content: str, auto_chunk: bool = True,

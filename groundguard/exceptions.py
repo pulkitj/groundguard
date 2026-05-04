@@ -1,4 +1,4 @@
-"""Custom exceptions for the agentic_verifier library."""
+"""Custom exceptions for the groundguard library."""
 
 
 class HallucinatedEvidenceError(Exception):
