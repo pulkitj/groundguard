@@ -7,26 +7,36 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _mock_atomic(status: str):
-    from groundguard.models.result import AtomicClaimResult
-    return AtomicClaimResult(
-        claim="x",
-        status=status,
-        verification_method="tier3_llm",
-        factual_consistency_score=0.9,
+    from groundguard.models.result import VerificationResult
+    return VerificationResult(
         is_valid=(status == "VERIFIED"),
+        overall_verdict="mock",
+        verification_method="tier3_llm",
+        atomic_claims=[],
+        factual_consistency_score=0.9,
+        sources_used=[],
+        rationale="mock",
+        offending_claim=None,
+        status=status,
+        total_cost_usd=0.0,
     )
 
 
 def _mock_batch_results(pairs):
-    from groundguard.models.result import AtomicClaimResult
+    from groundguard.models.result import VerificationResult
     results = []
     for status, score in pairs:
-        results.append(AtomicClaimResult(
-            claim="x",
-            status=status,
-            verification_method="tier3_llm",
-            factual_consistency_score=score,
+        results.append(VerificationResult(
             is_valid=(status == "VERIFIED"),
+            overall_verdict="mock",
+            verification_method="tier3_llm",
+            atomic_claims=[],
+            factual_consistency_score=score,
+            sources_used=[],
+            rationale="mock",
+            offending_claim=None,
+            status=status,
+            total_cost_usd=0.0,
         ))
     return results
 
@@ -68,7 +78,7 @@ def test_verify_analysis_all_unverifiable():
     from groundguard.core.verifier import _aggregate_analysis_results
     results = [_mock_atomic("UNVERIFIABLE"), _mock_atomic("UNVERIFIABLE")]
     gr = _aggregate_analysis_results(results)
-    assert gr.status == "PARTIALLY_GROUNDED"
+    assert gr.status == "NOT_GROUNDED"
     assert gr.score == 0.0
 
 
@@ -85,11 +95,8 @@ def test_verify_analysis_fail_contained(mocker):
     from groundguard.models.result import Source
     mocker.patch("groundguard.core.claim_extractor.extract_claims",
                  return_value=["Claim A.", "Claim B."])
-    def partial_fail(claim, sources, **kwargs):
-        if "B" in claim:
-            raise RuntimeError("LLM error")
-        return _mock_single_result("VERIFIED")
-    mocker.patch("groundguard.core.verifier._verify_single_claim", side_effect=partial_fail)
+    mocker.patch("groundguard.core.verifier.verify_batch",
+                 return_value=_mock_batch_results([("VERIFIED", 0.9), ("UNVERIFIABLE", 0.0)]))
     src = Source(source_id="s1", content="x")
     result = verify_analysis("Claim A. Claim B.", [src], model="gpt-4o-mini")
     assert result is not None

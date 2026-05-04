@@ -21,7 +21,9 @@ from groundguard.models.internal import (
     SharedCostTracker,
     VerificationContext,
 )
-from groundguard.models.result import VerificationResult
+from groundguard.core import claim_extractor
+from groundguard.models.result import GroundingResult, VerificationResult
+from groundguard.profiles import GENERAL_PROFILE, VerificationProfile
 from groundguard.tiers import tier1_authenticity, tier2_semantic, tier3_evaluation
 
 from groundguard._constants import TRANSIENT_LITELLM_ERRORS  # FIX-02: unified tuple
@@ -349,6 +351,107 @@ def dict_to_string_flattener(obj, prefix: str = "") -> str:
     else:
         lines.append(f"{prefix}: {obj}")
     return "\n".join(filter(None, lines))
+
+
+def _verify_single_claim(claim: str, sources: list, **kwargs) -> VerificationResult:
+    """Single-claim verification — used internally by verify_analysis for per-claim calls."""
+    return verify(claim=claim, sources=sources, **kwargs)
+
+
+def _aggregate_analysis_results(results: list, profile=None) -> GroundingResult:
+    """Aggregate a list of per-claim results into a GroundingResult."""
+    profile = profile or GENERAL_PROFILE
+
+    supported = sum(1 for r in results if r.status == "VERIFIED")
+    contradicted = sum(1 for r in results if r.status == "CONTRADICTED")
+    denom = supported + contradicted
+    score = supported / denom if denom > 0 else 0.0
+
+    # Special case: all UNVERIFIABLE (denom == 0 but results not empty)
+    if results and all(r.status == "UNVERIFIABLE" for r in results):
+        return GroundingResult(
+            is_grounded=False,
+            score=0.0,
+            status="NOT_GROUNDED",
+            evaluation_method="claim_extraction",
+            total_units=len(results),
+            unverifiable_units=len(results),
+        )
+
+    if score >= profile.faithfulness_threshold:
+        status = "GROUNDED"
+    elif score > 0:
+        status = "PARTIALLY_GROUNDED"
+    else:
+        status = "NOT_GROUNDED"
+
+    return GroundingResult(
+        is_grounded=(status == "GROUNDED"),
+        score=score,
+        status=status,
+        evaluation_method="claim_extraction",
+        total_units=len(results),
+        grounded_units=supported,
+        ungrounded_units=contradicted,
+        unverifiable_units=sum(1 for r in results if r.status == "UNVERIFIABLE"),
+    )
+
+
+def verify_analysis(
+    analysis_text: str,
+    sources: list,
+    model: str = "gpt-4o-mini",
+    profile=None,
+    max_spend: float = float("inf"),
+    api_base: str | None = None,
+    audit: bool | None = None,
+) -> GroundingResult:
+    """Verify that analysis_text is grounded in sources by extracting and checking each claim."""
+    profile = profile or GENERAL_PROFILE
+
+    try:
+        claims = claim_extractor.extract_claims(
+            analysis_text, sources, model, max_spend=max_spend, api_base=api_base
+        )
+    except ParseError:
+        return GroundingResult(
+            is_grounded=False,
+            score=0.0,
+            status="ERROR",
+            evaluation_method="claim_extraction",
+        )
+
+    inputs = [
+        ClaimInput(claim=c, sources=sources, model=model)
+        for c in claims
+    ]
+    results = verify_batch(inputs, model=model, max_spend=max_spend)
+
+    return _aggregate_analysis_results(results, profile)
+
+
+async def averify_analysis(
+    analysis_text: str,
+    sources: list,
+    model: str = "gpt-4o-mini",
+    profile=None,
+    max_spend: float = float("inf"),
+    api_base: str | None = None,
+    audit: bool | None = None,
+) -> GroundingResult:
+    """Async wrapper around verify_analysis."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None,
+        lambda: verify_analysis(
+            analysis_text,
+            sources,
+            model=model,
+            profile=profile,
+            max_spend=max_spend,
+            api_base=api_base,
+        ),
+    )
 
 
 def verify_structured(
