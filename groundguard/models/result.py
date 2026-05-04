@@ -56,6 +56,8 @@ class AtomicClaimResult:
     source_excerpt: str | None = None
     reasoning_basis: list[str] | None = None  # FIX-04: PRD specifies list[str], not str
     page_hint: str | None = None
+    verification_method: str | None = None
+    citation: Citation | None = None
 
 
 @dataclass

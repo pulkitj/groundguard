@@ -46,3 +46,10 @@ class ParseError(Exception):
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
+
+
+class InvariantError(Exception):
+    """Raised when a citation invariant is violated."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
