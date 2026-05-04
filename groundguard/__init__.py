@@ -30,3 +30,8 @@ from groundguard.circuit_breaker import (
     GroundingError,
 )
 from groundguard.loaders.accumulator import GroundingAccumulator, SourceAccumulator
+from groundguard.cost_estimate import (
+    CostEstimate,
+    estimate_verify_analysis_cost,
+    estimate_verify_faithfulness_cost,
+)
