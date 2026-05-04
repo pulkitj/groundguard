@@ -76,10 +76,13 @@ def test_extract_claims_boundary_id_in_prompt(mocker):
 
 def test_extract_claims_async(mocker):
     import asyncio
+    from unittest.mock import AsyncMock
     from groundguard.core.claim_extractor import extract_claims_async
     from groundguard.models.result import Source
-    mocker.patch(
-        "groundguard.core.claim_extractor._completion_with_backoff",
+
+    async_mock = mocker.patch(
+        "groundguard.core.claim_extractor._acompletion_with_backoff",
+        new_callable=AsyncMock,
         return_value=_mock_claims_response(["x"]),
     )
     src = Source(source_id="s1", content="x")
@@ -87,3 +90,4 @@ def test_extract_claims_async(mocker):
         extract_claims_async("x", [src], model="gpt-4o-mini")
     )
     assert isinstance(result, list)
+    assert async_mock.called, "_acompletion_with_backoff was not called — sync fallback may still be active"
