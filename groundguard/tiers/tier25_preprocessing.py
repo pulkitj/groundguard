@@ -10,8 +10,8 @@ if TYPE_CHECKING:
 
 from groundguard.models.result import Citation
 
-# Matches: 30%, 300%, $4.2M, $300, 1,000,000, 4.2, 2023
-_NUMBER_PATTERN = r'[$]?\d[\d,]*(?:\.\d+)?[%MBKT]?'
+# Matches: 30%, 300%, $4.2M, $300, 1,000,000, 4.2, 2023, -5%, -$4.2M, -300
+_NUMBER_PATTERN = r'-?[$]?\d[\d,]*(?:\.\d+)?[%MBKT]?'
 
 _STOPWORDS = {"the", "a", "an", "and", "or", "in", "of", "to", "is", "was", "be", "see", "for",
               "section", "details", "reference", "per", "at", "by", "with", "that", "this",
@@ -25,16 +25,21 @@ _YEAR_CONTEXT_PATTERN = r'(?:in|for|during|as of|fiscal|FY|Q[1-4])\s+(\d{4})\b'
 def _normalise_number(s: str) -> str:
     """Strip currency symbols, commas, and suffix letters to get numeric string."""
     s = s.strip()
+    # Extract and preserve leading minus sign
+    sign = ''
+    if s.startswith('-'):
+        sign = '-'
+        s = s[1:]
     # Remove leading $
     if s.startswith('$'):
         s = s[1:]
     # Remove trailing %, M, B, K, T (but if it ends with %, the number is the part before)
     if s.endswith('%'):
-        return s.rstrip('%').replace(',', '')
+        return sign + s.rstrip('%').replace(',', '')
     # Remove M/B/K/T suffixes (abbreviations for million/billion/etc.)
     if s and s[-1].upper() in ('M', 'B', 'K', 'T'):
         s = s[:-1]
-    return s.replace(',', '')
+    return sign + s.replace(',', '')
 
 
 def _has_sufficient_metric_context(text: str) -> bool:
