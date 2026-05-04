@@ -99,7 +99,25 @@ def test_verify_analysis_fail_contained(mocker):
                  return_value=_mock_batch_results([("VERIFIED", 0.9), ("UNVERIFIABLE", 0.0)]))
     src = Source(source_id="s1", content="x")
     result = verify_analysis("Claim A. Claim B.", [src], model="gpt-4o-mini")
-    assert result is not None
+    assert result.status in ("GROUNDED", "PARTIALLY_GROUNDED", "NOT_GROUNDED")
+    assert 0.0 <= result.score <= 1.0
+    assert result.evaluation_method == "claim_extraction"
+    # 1 VERIFIED + 1 UNVERIFIABLE → denom=1 → score=1.0 → GROUNDED
+    assert result.score == 1.0
+    assert result.status == "GROUNDED"
+
+
+def test_verify_analysis_parse_errors_count_against_score():
+    from groundguard.core.verifier import _aggregate_analysis_results
+    results = [
+        _mock_atomic("VERIFIED"),
+        _mock_atomic("PARSE_ERROR"),
+        _mock_atomic("PARSE_ERROR"),
+    ]
+    gr = _aggregate_analysis_results(results)
+    # 1 VERIFIED out of 3 total (2 PARSE_ERROR in denom) → score = 1/3
+    assert abs(gr.score - 1/3) < 0.01
+    assert gr.status in ("PARTIALLY_GROUNDED", "NOT_GROUNDED")
 
 
 def test_averify_analysis_returns_coroutine(mocker):

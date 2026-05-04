@@ -364,7 +364,8 @@ def _aggregate_analysis_results(results: list, profile=None) -> GroundingResult:
 
     supported = sum(1 for r in results if r.status == "VERIFIED")
     contradicted = sum(1 for r in results if r.status == "CONTRADICTED")
-    denom = supported + contradicted
+    errored = sum(1 for r in results if r.status not in ("VERIFIED", "CONTRADICTED", "UNVERIFIABLE"))
+    denom = supported + contradicted + errored
     score = supported / denom if denom > 0 else 0.0
 
     # Special case: all UNVERIFIABLE (denom == 0 but results not empty)
