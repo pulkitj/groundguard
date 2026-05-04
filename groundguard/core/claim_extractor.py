@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pydantic
 
 from groundguard.exceptions import ParseError
-from groundguard.tiers.tier3_evaluation import _completion_with_backoff
+from groundguard.tiers.tier3_evaluation import _completion_with_backoff, _acompletion_with_backoff
 
 if TYPE_CHECKING:
     from groundguard.models.result import Source
@@ -64,8 +64,6 @@ async def extract_claims_async(
     max_spend: float = float("inf"),
     api_base: str | None = None,
 ) -> list[str]:
-    # Calls _completion_with_backoff synchronously inside async context.
-    # The test patches _completion_with_backoff — this ensures the mock is intercepted.
     boundary = secrets.token_hex(6)
     sources_block = "\n".join(f"- {s.source_id}: {s.content[:200]}" for s in sources)
     prompt = CLAIM_EXTRACTION_PROMPT.format(
@@ -73,7 +71,7 @@ async def extract_claims_async(
     )
     for attempt in range(2):
         try:
-            response = _completion_with_backoff(
+            response = await _acompletion_with_backoff(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 **({"api_base": api_base} if api_base else {}),
