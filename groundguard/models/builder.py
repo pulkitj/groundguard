@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
+from groundguard.exceptions import InvariantError
 from groundguard.models.result import VerificationResult, AtomicClaimResult
 
 if TYPE_CHECKING:
@@ -12,6 +13,29 @@ if TYPE_CHECKING:
 
 class ResultBuilder:
     """Builds VerificationResult from pipeline tier outputs."""
+
+    @staticmethod
+    def _assert_citation_invariant(
+        status: str,
+        citation: object,
+        evaluation_method: str = "extractive",
+    ) -> None:
+        """Raise InvariantError if a VERIFIED extractive result has no citation.
+
+        Inferential claims are exempt: the LLM prompt instructs the model to
+        provide ``reasoning_basis`` instead of a direct-quote excerpt, so
+        ``citation`` will naturally be ``None`` for those claims.
+
+        Args:
+            status: Verdict status (e.g. "VERIFIED", "UNVERIFIABLE").
+            citation: The Citation object or None.
+            evaluation_method: Either "extractive" or "inferential".
+        """
+        if status == "VERIFIED" and citation is None and evaluation_method != "inferential":
+            raise InvariantError(
+                f"VERIFIED {evaluation_method} claim has no citation. "
+                "Every extractive VERIFIED result must include a source excerpt."
+            )
 
     @staticmethod
     def build_lexical_pass(
@@ -96,18 +120,23 @@ class ResultBuilder:
             a.claim_text: a.claim_type for a in ctx.tier0_atoms
         }
 
-        atomic_claims = [
-            AtomicClaimResult(
+        atomic_claims = []
+        for v in t3_model.verifications:
+            claim_type = atom_types.get(v.claim_text, "Extractive")
+            ResultBuilder._assert_citation_invariant(
+                status=v.status,
+                citation=v.source_excerpt,
+                evaluation_method=claim_type.lower(),
+            )
+            atomic_claims.append(AtomicClaimResult(
                 claim_text=v.claim_text,
-                claim_type=atom_types.get(v.claim_text, "Extractive"),  # fallback to Extractive
+                claim_type=claim_type,
                 status=v.status,
                 source_id=v.source_id,
                 source_excerpt=v.source_excerpt,
                 reasoning_basis=v.reasoning_basis,
                 page_hint=page_hints.get(v.source_id) if v.source_id else None,
-            )
-            for v in t3_model.verifications
-        ]
+            ))
 
         offending_claim = next(
             (a.claim_text for a in atomic_claims if a.status == "CONTRADICTED"), None

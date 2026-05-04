@@ -17,7 +17,13 @@ class GroundingAccumulator:
     def overall_score(self) -> float:
         if not self._results:
             return 0.0
-        return sum(r.score for r in self._results) / len(self._results)
+        total_grounded = sum(r.grounded_units for r in self._results)
+        total_scorable = sum(r.grounded_units + r.ungrounded_units for r in self._results)
+        if total_scorable == 0:
+            # Unit counts not populated (e.g. results from verify() claim_extraction path);
+            # fall back to simple average of each result's normalised score.
+            return sum(r.score for r in self._results) / len(self._results)
+        return total_grounded / total_scorable
 
     @property
     def is_grounded(self) -> bool:
@@ -70,9 +76,9 @@ class SourceAccumulator:
 
         if populate_boundary_context and new_sources:
             all_after = self._sources + new_sources
-            for idx_in_all, s in enumerate(all_after):
-                if idx_in_all == 0:
-                    continue
+            start_idx = max(1, len(self._sources))
+            for idx_in_all in range(start_idx, len(all_after)):
+                s = all_after[idx_in_all]
                 prev = all_after[idx_in_all - 1]
                 if prev.source_id.split("::")[0] != s.source_id.split("::")[0]:
                     continue

@@ -2,12 +2,15 @@
 from groundguard.models.result import GroundingResult, Source
 
 
-def _gr(is_grounded: bool, score: float) -> GroundingResult:
+def _gr(is_grounded: bool, score: float, grounded_units: int = 1, ungrounded_units: int = 0) -> GroundingResult:
     return GroundingResult(
         is_grounded=is_grounded,
         score=score,
         status="GROUNDED" if is_grounded else "NOT_GROUNDED",
         evaluation_method="sentence_entailment",
+        total_units=grounded_units + ungrounded_units,
+        grounded_units=grounded_units,
+        ungrounded_units=ungrounded_units,
     )
 
 
@@ -27,12 +30,15 @@ def test_grounding_accumulator_is_grounded_empty_is_true():
     assert acc.is_grounded is True  # all() of empty = True
 
 
-def test_grounding_accumulator_overall_score_averages():
+def test_grounding_accumulator_overall_score_weighted():
     from groundguard.loaders.accumulator import GroundingAccumulator
     acc = GroundingAccumulator()
-    acc.add(_gr(True, 0.9))
-    acc.add(_gr(True, 0.7))
-    assert abs(acc.overall_score - 0.8) < 1e-9
+    # Result A: 1 unit, grounded (score=1.0)
+    acc.add(_gr(True, 1.0, grounded_units=1, ungrounded_units=0))
+    # Result B: 49 units, 49 ungrounded (score=0.0)
+    acc.add(_gr(False, 0.0, grounded_units=0, ungrounded_units=49))
+    # Overall score should be 1 / 50 = 0.02
+    assert abs(acc.overall_score - 0.02) < 1e-9
 
 
 def test_grounding_accumulator_is_grounded_false_if_any_not():
@@ -49,6 +55,27 @@ def test_grounding_accumulator_reset_clears():
     acc.add(_gr(True, 0.9))
     acc.reset()
     assert acc.overall_score == 0.0
+
+
+def test_grounding_accumulator_falls_back_to_score_average_when_unit_counts_absent():
+    """verify() results use claim_extraction and do not populate grounded/ungrounded_units.
+    When all results have zero unit counts, overall_score must fall back to the
+    simple average of each result's .score rather than returning 0.0.
+    """
+    from groundguard.loaders.accumulator import GroundingAccumulator
+    # GroundingResults from verify() leave grounded_units=0, ungrounded_units=0
+    r1 = GroundingResult(
+        is_grounded=True, score=0.9, status="GROUNDED",
+        evaluation_method="claim_extraction",
+    )
+    r2 = GroundingResult(
+        is_grounded=True, score=0.7, status="GROUNDED",
+        evaluation_method="claim_extraction",
+    )
+    acc = GroundingAccumulator()
+    acc.add(r1)
+    acc.add(r2)
+    assert abs(acc.overall_score - 0.8) < 1e-9
 
 
 # ---------------------------------------------------------------------------

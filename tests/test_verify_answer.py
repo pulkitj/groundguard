@@ -5,6 +5,13 @@ from groundguard.profiles import GENERAL_PROFILE
 
 def _mock_grounding_result(status: str, score: float = 0.9):
     from groundguard.models.result import GroundingResult
+    if score < 1.0 and status == "GROUNDED":
+        raise ValueError(f"Impossible state: GROUNDED requires score 1.0, got {score}")
+    if status == "PARTIALLY_GROUNDED" and (score == 1.0 or score == 0.0):
+        raise ValueError(f"Impossible state: PARTIALLY_GROUNDED requires 0.0 < score < 1.0, got {score}")
+    if status == "NOT_GROUNDED" and score == 1.0:
+        raise ValueError(f"Impossible state: NOT_GROUNDED requires score < 1.0, got {score}")
+    
     return GroundingResult(
         is_grounded=(status == "GROUNDED"),
         score=score,
@@ -18,7 +25,7 @@ def test_verify_answer_returns_grounding_result(mocker):
     from groundguard.models.result import Source, GroundingResult
     mocker.patch(
         "groundguard.tiers.tier3_evaluation.evaluate_faithfulness",
-        return_value=_mock_grounding_result("GROUNDED"),
+        return_value=_mock_grounding_result("GROUNDED", score=1.0),
     )
     src = Source(source_id="s1", content="Revenue was $4.2M.")
     result = verify_answer("Revenue was $4.2M.", [src], model="gpt-4o-mini")
@@ -31,7 +38,7 @@ def test_verify_answer_grounded_when_entailment(mocker):
     from groundguard.models.result import Source
     mocker.patch(
         "groundguard.tiers.tier3_evaluation.evaluate_faithfulness",
-        return_value=_mock_grounding_result("GROUNDED", score=0.95),
+        return_value=_mock_grounding_result("PARTIALLY_GROUNDED", score=0.95),
     )
     src = Source(source_id="s1", content="x")
     result = verify_answer("x", [src], model="gpt-4o-mini")
@@ -58,7 +65,7 @@ def test_averify_answer_returns_coroutine(mocker):
     from groundguard.models.result import Source
     mocker.patch(
         "groundguard.tiers.tier3_evaluation.evaluate_faithfulness",
-        return_value=_mock_grounding_result("GROUNDED"),
+        return_value=_mock_grounding_result("GROUNDED", score=1.0),
     )
     src = Source(source_id="s1", content="x")
     coro = averify_answer("x", [src], model="gpt-4o-mini")
@@ -72,7 +79,7 @@ def test_verify_answer_strict_profile_majority_vote(mocker):
     from groundguard.profiles import STRICT_PROFILE
     mock_eval = mocker.patch(
         "groundguard.tiers.tier3_evaluation.evaluate_faithfulness",
-        return_value=_mock_grounding_result("GROUNDED", score=0.80),  # below 0.85 -> triggers vote
+        return_value=_mock_grounding_result("PARTIALLY_GROUNDED", score=0.80),  # below 0.85 -> triggers vote
     )
     src = Source(source_id="s1", content="x")
     verify_answer("x", [src], profile=STRICT_PROFILE, model="gpt-4o-mini")
@@ -88,7 +95,8 @@ def test_verify_answer_majority_vote_three_way_split_returns_unverifiable(mocker
     def rotating(*a, **kw):
         call_n[0] += 1
         verdicts = ["GROUNDED", "NOT_GROUNDED", "PARTIALLY_GROUNDED"]
-        return _mock_grounding_result(verdicts[(call_n[0] - 1) % 3], score=0.50)
+        scores = [1.0, 0.0, 0.50]
+        return _mock_grounding_result(verdicts[(call_n[0] - 1) % 3], score=scores[(call_n[0] - 1) % 3])
     mocker.patch("groundguard.tiers.tier3_evaluation.evaluate_faithfulness",
                  side_effect=rotating)
     src = Source(source_id="s1", content="x")
@@ -105,7 +113,7 @@ def test_verify_answer_majority_vote_two_one_returns_winner(mocker):
     call_n = [0]
     def two_grounded(*a, **kw):
         call_n[0] += 1
-        score = 0.90 if call_n[0] != 2 else 0.50
+        score = 1.0 if call_n[0] != 2 else 0.0
         status = "GROUNDED" if call_n[0] != 2 else "NOT_GROUNDED"
         return _mock_grounding_result(status, score=score)
     mocker.patch("groundguard.tiers.tier3_evaluation.evaluate_faithfulness",
@@ -121,7 +129,7 @@ def test_verify_answer_explicit_threshold_overrides_profile(mocker):
     from groundguard.profiles import STRICT_PROFILE
     mocker.patch(
         "groundguard.tiers.tier3_evaluation.evaluate_faithfulness",
-        return_value=_mock_grounding_result("GROUNDED", score=0.50),
+        return_value=_mock_grounding_result("PARTIALLY_GROUNDED", score=0.50),
     )
     src = Source(source_id="s1", content="x")
     # STRICT_PROFILE.faithfulness_threshold=0.97; score=0.50 < 0.97 -> not grounded
@@ -129,3 +137,16 @@ def test_verify_answer_explicit_threshold_overrides_profile(mocker):
     result = verify_answer("x", [src], profile=STRICT_PROFILE,
                            faithfulness_threshold=0.40, model="gpt-4o-mini")
     assert result.is_grounded is True
+
+def test_verify_answer_fatal_contradiction_overrides_score_threshold(mocker):
+    from groundguard.core.verifier import verify_answer
+    from groundguard.models.result import Source
+    mocker.patch(
+        'groundguard.tiers.tier3_evaluation.evaluate_faithfulness',
+        return_value=_mock_grounding_result('NOT_GROUNDED', score=0.9),
+    )
+    src = Source(source_id='s1', content='x')
+    result = verify_answer('x', [src], model='gpt-4o-mini')
+    assert result.is_grounded is False
+    assert result.status == 'NOT_GROUNDED'
+

@@ -377,7 +377,7 @@ async def averify_batch(
                 rationale=str(r),
                 offending_claim=None,
                 status="ERROR",
-                total_cost_usd=0.0,  # item's incremental cost unknown on failure
+                total_cost_usd=0.0,
             ))
         else:
             results.append(r)
@@ -572,16 +572,27 @@ def verify_answer(
         for _ in range(2):
             r = tier3_evaluation.evaluate_faithfulness(ctx, chunks)
             results.append(r)
+        
+        # Apply threshold to each result for voting
+        vote_statuses = []
+        for r in results:
+            if r.status == "NOT_GROUNDED":
+                vote_statuses.append("NOT_GROUNDED")
+            elif r.score >= threshold:
+                vote_statuses.append("GROUNDED")
+            else:
+                vote_statuses.append("PARTIALLY_GROUNDED")
+                
         from collections import Counter
-        counts = Counter(r.status for r in results)
+        counts = Counter(vote_statuses)
         winner, top_count = counts.most_common(1)[0]
         is_tie = top_count == 1
         audit_records = []
-        for r in results:
+        for i, r in enumerate(results):
             rec = VerificationAuditRecord(
                 boundary_id=ctx._boundary_id,
                 claim_text=answer,
-                verdict=r.status,
+                verdict=vote_statuses[i],
                 tier_path=["tier3_faithfulness"],
                 model=model,
                 cost_usd=0.0,
@@ -605,7 +616,7 @@ def verify_answer(
                 extra={"boundary_id": ctx._boundary_id, "score": gr.score},
             )
             return gr
-        winning_result = next(r for r in results if r.status == winner)
+        winning_result = next(r for i, r in enumerate(results) if vote_statuses[i] == winner)
         gr = GroundingResult(
             is_grounded=winner == "GROUNDED",
             score=winning_result.score,
@@ -620,7 +631,7 @@ def verify_answer(
         )
         return gr
 
-    is_grounded = result.is_grounded and result.score >= threshold
+    is_grounded = result.status != "NOT_GROUNDED" and result.score >= threshold
     gr = GroundingResult(
         is_grounded=is_grounded,
         score=result.score,
