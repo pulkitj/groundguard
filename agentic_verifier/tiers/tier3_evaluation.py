@@ -66,7 +66,7 @@ Generate a JSON object with a five-part analysis:
      logically sound given the data in the sources.
    - Status: "VERIFIED" (inference is well-supported), "CONTRADICTED" (sources
      suggest the opposite conclusion), or "UNVERIFIABLE" (insufficient data).
-   - Provide reasoning_basis explaining your evaluation.
+   - Provide reasoning_basis as a JSON array of strings, each entry one reasoning step.
    - Provide source_id(s) used.
 
    Calculate factual_consistency_score:

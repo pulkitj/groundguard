@@ -323,3 +323,93 @@ async def test_evaluate_async_retries_on_transient_error(mocker):
 
     assert call_count[0] == 2  # first call failed, second succeeded
     assert isinstance(result, Tier3ResponseModel)
+
+
+# ---------------------------------------------------------------------------
+# FIX-04 regression — reasoning_basis schema/prompt contract
+# ---------------------------------------------------------------------------
+
+def test_atomic_verification_accepts_reasoning_basis_as_list():
+    """AtomicVerification.reasoning_basis accepts a list[str] value."""
+    v = AtomicVerification(
+        claim_text="Revenue grew faster than costs.",
+        status="VERIFIED",
+        reasoning_basis=["Source shows 20% revenue growth.", "Costs grew only 5%."],
+    )
+    assert v.reasoning_basis == ["Source shows 20% revenue growth.", "Costs grew only 5%."]
+
+
+def test_atomic_verification_coerces_scalar_string_to_list():
+    """A model returning reasoning_basis as a plain string is coerced to list[str], not rejected."""
+    v = AtomicVerification(
+        claim_text="Revenue grew faster than costs.",
+        status="VERIFIED",
+        reasoning_basis="Source shows revenue growth exceeded cost growth.",  # type: ignore[arg-type]
+    )
+    assert isinstance(v.reasoning_basis, list)
+    assert v.reasoning_basis == ["Source shows revenue growth exceeded cost growth."]
+
+
+def test_parse_response_accepts_reasoning_basis_list():
+    """parse_response succeeds when reasoning_basis is a JSON array (inferential claim)."""
+    from agentic_verifier.tiers.tier3_evaluation import parse_response
+
+    model_with_reasoning = Tier3ResponseModel(
+        textual_entailment=TextualEntailment(label="Entailment", probability=0.9),
+        conceptual_coverage=ConceptualCoverage(percentage=85.0, covered_concepts=["growth"], missing_concepts=[]),
+        factual_consistency_score=85.0,
+        verifications=[AtomicVerification(
+            claim_text="Revenue grew faster than costs.",
+            status="VERIFIED",
+            reasoning_basis=["Revenue up 20%.", "Costs up 5%."],
+        )],
+        source_attributions=[SourceAttribution(source_id="doc.pdf", role="Supporting")],
+        overall_verdict="Inference is supported.",
+    )
+    raw_json = model_with_reasoning.model_dump_json()
+    mock_response = MagicMock()
+    mock_response.choices[0].message.parsed = None
+    mock_response.choices[0].message.content = raw_json
+    result = parse_response(mock_response, "gpt-4o-mini")
+    assert isinstance(result, Tier3ResponseModel)
+    assert result.verifications[0].reasoning_basis == ["Revenue up 20%.", "Costs up 5%."]
+
+
+def test_parse_response_coerces_scalar_reasoning_basis():
+    """parse_response succeeds when model returns reasoning_basis as a scalar string (regression guard)."""
+    from agentic_verifier.tiers.tier3_evaluation import parse_response
+    import json
+
+    raw = {
+        "textual_entailment": {"label": "Entailment", "probability": 0.9},
+        "conceptual_coverage": {"percentage": 85.0, "covered_concepts": ["growth"], "missing_concepts": []},
+        "factual_consistency_score": 85.0,
+        "verifications": [{
+            "claim_text": "Revenue grew faster than costs.",
+            "status": "VERIFIED",
+            "source_id": None,
+            "source_excerpt": None,
+            "reasoning_basis": "Revenue up 20%, costs up 5%.",  # scalar — old model output shape
+        }],
+        "source_attributions": [{"source_id": "doc.pdf", "role": "Supporting"}],
+        "overall_verdict": "Inference is supported.",
+    }
+    mock_response = MagicMock()
+    mock_response.choices[0].message.parsed = None
+    mock_response.choices[0].message.content = json.dumps(raw)
+    result = parse_response(mock_response, "gpt-4o-mini")
+    assert isinstance(result, Tier3ResponseModel)
+    assert result.verifications[0].reasoning_basis == ["Revenue up 20%, costs up 5%."]
+
+
+def test_prompt_specifies_reasoning_basis_as_array():
+    """The Tier 3 prompt explicitly instructs the model to emit reasoning_basis as a JSON array."""
+    from agentic_verifier.tiers.tier3_evaluation import render_prompt
+    prompt = render_prompt(_make_ctx(), _make_chunks())
+    # Must mention reasoning_basis AND array/list in the same instruction, not just incidentally
+    rb_idx = prompt.find("reasoning_basis")
+    assert rb_idx != -1, "prompt must mention reasoning_basis"
+    surrounding = prompt[rb_idx:rb_idx + 120].lower()
+    assert "array" in surrounding or "list of" in surrounding, (
+        "reasoning_basis instruction must explicitly say 'array' or 'list of'"
+    )

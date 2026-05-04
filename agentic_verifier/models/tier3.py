@@ -1,7 +1,7 @@
 """Tier 3 LLM response models."""
 from __future__ import annotations
 from typing import Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class TextualEntailment(BaseModel):
@@ -46,6 +46,13 @@ class AtomicVerification(BaseModel):
     source_id: str | None = None
     source_excerpt: str | None = None
     reasoning_basis: list[str] | None = None  # FIX-04: PRD specifies list[str], not str
+
+    @field_validator("reasoning_basis", mode="before")
+    @classmethod
+    def _coerce_scalar_to_list(cls, v: object) -> object:
+        if isinstance(v, str):
+            return [v]
+        return v
 
 
 class SourceAttribution(BaseModel):
