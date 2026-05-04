@@ -99,7 +99,7 @@ Only read a source file when you are about to act on it.
 Always use the quiet flags below. Never use the verbose form.
 
 ```
-pytest (fast suite)  →  pytest -m "not llm and not loaders and not langchain" -x -q --tb=short --no-header
+pytest (fast suite)  →  pytest -m "not llm and not loaders and not langchain and not compat" -x -q --tb=short --no-header
 pytest (single test) →  pytest <test_path> -x -q --tb=short
 pytest (compat)      →  pytest -m compat -v --timeout=300 -p no:cov
 pytest (llm)         →  pytest -m llm --timeout=120 -q
@@ -129,7 +129,7 @@ Do NOT immediately read all plan documents.
 pip install -e ".[dev,loaders,langchain]"
 
 # Run fast suite (zero LLM calls — default for all dev work)
-pytest -m "not llm and not loaders and not langchain" -x -q
+pytest -m "not llm and not loaders and not langchain and not compat" -x -q
 
 # Run a single test
 pytest tests/test_tier2.py::test_all_zero_scores_triggers_escalate_all_low_score -x -q
@@ -141,7 +141,7 @@ pytest -m llm --timeout=120 -q
 pytest -m loaders -q
 
 # Run with coverage report
-pytest -m "not llm and not loaders and not langchain" --cov=groundguard --cov-report=term-missing
+pytest -m "not llm and not loaders and not langchain and not compat" --cov=groundguard --cov-report=term-missing
 ```
 
 ---
