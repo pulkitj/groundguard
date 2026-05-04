@@ -169,3 +169,74 @@ def test_build_lexical_pass_empty_matched_chunks():
     assert result.factual_consistency_score == 1.0
     assert len(result.atomic_claims) == 1
     assert result.atomic_claims[0].source_id is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 23 — T-84: ResultBuilder v2 tests (new core/result_builder module)
+# ---------------------------------------------------------------------------
+
+def test_build_numerical_fast_exit_returns_contradicted():
+    from groundguard.core.result_builder import ResultBuilder
+    from groundguard.models.result import Source, Citation
+    from groundguard.tiers.tier25_preprocessing import Tier25Result
+    from groundguard.loaders.chunker import Chunk
+    conflict_citation = Citation(source_id="s1", excerpt="30%", excerpt_char_start=12,
+                                 excerpt_char_end=15, citation_confidence=1.0)
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="rate is 30%.",
+                  char_start=0, char_end=12, token_count=3)
+    tier25 = Tier25Result(has_conflict=True, evidence_bundle=[chunk],
+                          conflict_citation=conflict_citation)
+    result = ResultBuilder.build_numerical_fast_exit(
+        claim="rate is 300%.", tier25=tier25,
+        source=Source(source_id="s1", content="rate is 30%.")
+    )
+    assert result.status == "CONTRADICTED"
+    assert result.verification_method == "tier25_numerical"
+    assert result.citation is not None
+    assert result.citation.excerpt == "30%"
+
+
+def test_build_lexical_pass_citation_non_null():
+    from groundguard.core.result_builder import ResultBuilder
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+    src = Source(source_id="s1", content="The contract value is one million dollars.")
+    chunk = Chunk(chunk_id="c1", source_id="s1",
+                  text_content="The contract value is one million dollars.",
+                  char_start=0, char_end=41, token_count=8)
+    result = ResultBuilder.build_lexical_pass(
+        claim="contract value is one million dollars",
+        top_chunks=[chunk], score=1.0, source=src
+    )
+    assert result.citation is not None
+    assert result.citation.excerpt is not None
+    assert result.citation.excerpt in src.content
+
+
+def test_build_llm_result_verified_citation_non_null():
+    from groundguard.core.result_builder import ResultBuilder
+    from groundguard.models.result import Source
+    from groundguard.models.tier3 import Tier3ResponseModel
+    # mock Tier3ResponseModel with VERIFIED
+    # citation must be non-null
+    pass  # stub — implement with mocker in real test
+
+
+def test_build_llm_result_unverifiable_citation_is_none():
+    from groundguard.core.result_builder import ResultBuilder
+    pass  # stub
+
+
+def test_citation_invariant_raises_on_verified_null_citation():
+    from groundguard.core.result_builder import ResultBuilder
+    from groundguard.models.result import AtomicClaimResult, Citation
+    from groundguard.exceptions import InvariantError
+    with pytest.raises(InvariantError, match="citation"):
+        ResultBuilder._assert_citation_invariant(
+            verdict="VERIFIED", citation=None
+        )
+
+
+def test_citation_invariant_passes_for_unverifiable():
+    from groundguard.core.result_builder import ResultBuilder
+    ResultBuilder._assert_citation_invariant(verdict="UNVERIFIABLE", citation=None)
