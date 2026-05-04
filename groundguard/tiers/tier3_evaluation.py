@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import litellm
 
-from groundguard.models.tier3 import Tier3ResponseModel
+from groundguard.models.tier3 import Tier3ResponseModel, FaithfulnessResponseModel
 from groundguard.exceptions import ParseError
 from groundguard._log import logger
 from groundguard.adapters.registry import get_adapter
@@ -248,3 +248,148 @@ async def evaluate_async(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3
 
     logger.error("Tier 3 async failed after 2 attempts — raising ParseError")
     raise ParseError("Failed to generate valid Tier 3 output after retry.")
+
+
+FAITHFULNESS_PROMPT_TEMPLATE = """\
+You are a fact-checking AI. For each numbered claim sentence, determine whether it is
+Entailed, Contradicted, or Neutral based solely on the provided source text.
+
+SOURCE TEXT:
+{sources_block}
+
+CLAIM SENTENCES:
+{sentences_block}
+
+Output a JSON object with a "sentence_results" list. Each item must have:
+  "sentence": the claim sentence text
+  "verdict": one of "Entailment", "Contradiction", "Neutral"
+  "confidence": float 0.0–1.0
+"""
+
+_PRONOUNS = {"it", "he", "she", "they", "this", "that", "these", "those", "its", "their"}
+
+
+def evaluate_faithfulness(
+    ctx: "VerificationContext",
+    chunks: "list[Chunk]",
+    structural_hints: list | None = None,
+) -> "Any":
+    """Sentence-level faithfulness evaluation returning a GroundingResult."""
+    import re
+    import datetime
+    from groundguard.models.result import (
+        GroundingResult, ContextualizedClaimUnit, VerificationAuditRecord,
+    )
+
+    source_map = {s.source_id: s for s in (ctx.original_sources or [])}
+
+    # Build sources block with prev/next context injected around each chunk
+    chunk_texts = []
+    for chunk in chunks:
+        src = source_map.get(chunk.source_id)
+        parts = []
+        if src and src.prev_context:
+            parts.append(f"[preceding context: {src.prev_context}]")
+        parts.append(chunk.text_content)
+        if src and src.next_context:
+            parts.append(f"[following context: {src.next_context}]")
+        chunk_texts.append("\n".join(parts))
+    sources_block = "\n\n".join(chunk_texts)
+
+    # Build claim units from structural hints or sentence splitting
+    if structural_hints:
+        units = [
+            ContextualizedClaimUnit(
+                display_text=h.get("display_text", ""),
+                claim_text=h.get("claim_text", ""),
+                enrichment_method=h.get("enrichment_method"),
+                structural_type=h.get("structural_type"),
+                heading_path=h.get("heading_path", []),
+                column_header=h.get("column_header"),
+                row_label=h.get("row_label"),
+            )
+            for h in structural_hints
+        ]
+    else:
+        raw_sentences = re.split(r'(?<=[.!?])\s+', ctx.claim.strip())
+        raw_sentences = [s.strip() for s in raw_sentences if s.strip()]
+        units = []
+        for i, sent in enumerate(raw_sentences):
+            first_word = sent.split()[0].rstrip(".,!?").lower() if sent.split() else ""
+            if first_word in _PRONOUNS:
+                enrichment = "llm_coreference"
+                preceding = raw_sentences[i - 1] if i > 0 else None
+            else:
+                enrichment = "none"
+                preceding = None
+            units.append(ContextualizedClaimUnit(
+                display_text=sent,
+                claim_text=sent,
+                enrichment_method=enrichment,
+                preceding_sentence=preceding,
+            ))
+
+    sentences_block = "\n".join(
+        f"{i + 1}. {u.claim_text}" for i, u in enumerate(units)
+    )
+    prompt = FAITHFULNESS_PROMPT_TEMPLATE.format(
+        sources_block=sources_block,
+        sentences_block=sentences_block,
+    )
+
+    response = _completion_with_backoff(
+        model=ctx.model or "gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        response_format=FaithfulnessResponseModel,
+    )
+
+    content = response.choices[0].message.content
+    faithfulness = FaithfulnessResponseModel.model_validate_json(content)
+
+    # Apply verdict/confidence back to units
+    for i, unit in enumerate(units):
+        if i < len(faithfulness.sentence_results):
+            sr = faithfulness.sentence_results[i]
+            unit.confidence = sr.confidence
+            unit.verification_status = sr.verdict
+
+    verdicts = [sr.verdict for sr in faithfulness.sentence_results]
+    entailment_count = sum(1 for v in verdicts if v == "Entailment")
+    contradiction_count = sum(1 for v in verdicts if v == "Contradiction")
+    total = len(units) if units else 1
+    score = entailment_count / total
+
+    if contradiction_count > 0:
+        status, is_grounded = "NOT_GROUNDED", False
+    elif entailment_count == total:
+        status, is_grounded = "GROUNDED", True
+    else:
+        status, is_grounded = "PARTIALLY_GROUNDED", False
+
+    audit_records = None
+    if ctx.profile.audit:
+        audit_records = []
+        for i, unit in enumerate(units):
+            sr = faithfulness.sentence_results[i] if i < len(faithfulness.sentence_results) else None
+            audit_records.append(VerificationAuditRecord(
+                boundary_id=ctx._boundary_id,
+                claim_text=unit.claim_text,
+                verdict=sr.verdict if sr else "Neutral",
+                tier_path=["evaluate_faithfulness"],
+                model=ctx.model or "",
+                cost_usd=0.0,
+                timestamp_utc=datetime.datetime.utcnow().isoformat(),
+                profile_name=ctx.profile.name,
+            ))
+
+    return GroundingResult(
+        is_grounded=is_grounded,
+        score=score,
+        status=status,
+        evaluation_method="sentence_entailment",
+        total_units=len(units),
+        grounded_units=entailment_count,
+        ungrounded_units=contradiction_count,
+        unit_results=units,
+        audit_records=audit_records,
+    )

@@ -121,6 +121,9 @@ class ContextualizedClaimUnit:
     citation: Citation | None = None
     confidence: float = 0.0
     numerical_fast_exit: bool = False
+    preceding_sentence: str | None = None
+    column_header: str | None = None
+    row_label: str | None = None
 
 
 @dataclass

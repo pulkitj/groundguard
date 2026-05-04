@@ -4,6 +4,20 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
+class SentenceResult(BaseModel):
+    """Per-sentence faithfulness verdict from the LLM."""
+    sentence: str
+    verdict: Literal["Entailment", "Contradiction", "Neutral"]
+    confidence: float
+    grounding_source_id: str | None = None
+    reasoning: str | None = None
+
+
+class FaithfulnessResponseModel(BaseModel):
+    """Structured response for the sentence-level faithfulness evaluation."""
+    sentence_results: list[SentenceResult]
+
+
 class TextualEntailment(BaseModel):
     """
     The LLM's textual entailment judgment.
