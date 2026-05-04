@@ -1,6 +1,7 @@
 """Pytest configuration and shared fixtures for the groundguard test suite."""
 from __future__ import annotations
 
+import asyncio
 import os
 
 import litellm
@@ -151,6 +152,21 @@ def _ollama_unload(tag: str) -> None:
 
 
 _current_ollama_model: list[str] = []   # mutable sentinel; holds at most one tag
+
+
+@pytest.fixture(autouse=True)
+def _ensure_event_loop():
+    """Create and set a current event loop for each test (required on Python 3.14+).
+
+    Python 3.10 deprecated and 3.14 removed the implicit default event loop
+    from asyncio.get_event_loop().  Tests that call
+    asyncio.get_event_loop().run_until_complete(...) need this fixture.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    yield
+    loop.close()
+    asyncio.set_event_loop(None)
 
 
 @pytest.fixture
