@@ -172,6 +172,7 @@ class VerificationAuditRecord:
     majority_vote_triggered: bool = False
     vote_breakdown: dict | None = None
     defined_terms_resolved: list = field(default_factory=list)
+    tie_broken: bool = False
     cross_references_injected: list = field(default_factory=list)
     profile_override: bool = False
     effective_faithfulness_threshold: float | None = None

@@ -458,6 +458,104 @@ async def averify_analysis(
     return _aggregate_analysis_results(results, profile)
 
 
+def verify_answer(
+    answer: str,
+    sources: list,
+    *,
+    profile: VerificationProfile = None,
+    faithfulness_threshold: float = None,
+    model: str = "gpt-4o-mini",
+    max_spend: float = float("inf"),
+) -> GroundingResult:
+    from groundguard.models.result import VerificationAuditRecord
+
+    if profile is None:
+        profile = GENERAL_PROFILE
+    threshold = faithfulness_threshold if faithfulness_threshold is not None else profile.faithfulness_threshold
+
+    ctx = VerificationContext(
+        claim=answer,
+        sources=sources,
+        model=model,
+        cost_tracker=SharedCostTracker(max_spend=max_spend),
+        profile=profile,
+    )
+    chunks = chunker.chunk_sources(ctx)
+
+    result = tier3_evaluation.evaluate_faithfulness(ctx, chunks)
+
+    if profile.majority_vote:
+        results = [result]
+        for _ in range(2):
+            r = tier3_evaluation.evaluate_faithfulness(ctx, chunks)
+            results.append(r)
+        from collections import Counter
+        counts = Counter(r.status for r in results)
+        winner, top_count = counts.most_common(1)[0]
+        is_tie = top_count == 1
+        audit_records = []
+        for r in results:
+            rec = VerificationAuditRecord(
+                boundary_id=ctx._boundary_id,
+                claim_text=answer,
+                verdict=r.status,
+                tier_path=["tier3_faithfulness"],
+                model=model,
+                cost_usd=0.0,
+                timestamp_utc="",
+                profile_name=profile.name if hasattr(profile, "name") else "unknown",
+                majority_vote_triggered=True,
+            )
+            audit_records.append(rec)
+        if is_tie:
+            audit_records[0].tie_broken = True
+            return GroundingResult(
+                is_grounded=False,
+                score=min(r.score for r in results),
+                status="NOT_GROUNDED",
+                evaluation_method="sentence_entailment",
+                audit_records=audit_records,
+            )
+        winning_result = next(r for r in results if r.status == winner)
+        return GroundingResult(
+            is_grounded=winner == "GROUNDED",
+            score=winning_result.score,
+            status=winner,
+            evaluation_method="sentence_entailment",
+            audit_records=audit_records,
+        )
+
+    is_grounded = result.is_grounded and result.score >= threshold
+    return GroundingResult(
+        is_grounded=is_grounded,
+        score=result.score,
+        status=result.status if not is_grounded else "GROUNDED",
+        evaluation_method=result.evaluation_method,
+    )
+
+
+async def averify_answer(
+    answer: str,
+    sources: list,
+    *,
+    profile: VerificationProfile = None,
+    faithfulness_threshold: float = None,
+    model: str = "gpt-4o-mini",
+    max_spend: float = float("inf"),
+) -> GroundingResult:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None,
+        lambda: verify_answer(
+            answer, sources,
+            profile=profile,
+            faithfulness_threshold=faithfulness_threshold,
+            model=model,
+            max_spend=max_spend,
+        ),
+    )
+
+
 def verify_structured(
     claim_dict: dict,
     schema: type[pydantic.BaseModel],
