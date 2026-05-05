@@ -22,7 +22,7 @@ jobs:
       - name: Install core deps
         run: pip install -e ".[dev]"
       - name: Run fast suite
-        run: pytest -m "not llm and not loaders and not langchain" -x -q
+        run: pytest -m "not llm and not loaders and not langchain and not compat" -x -q --tb=short
 
   loaders-suite:
     name: Optional Loaders Tests

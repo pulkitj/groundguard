@@ -6,8 +6,30 @@ build-backend = "hatchling.build"
 name = "groundguard"
 version = "0.1.0"
 description = "LLM-agnostic deterministic assert layer for AI agent outputs"
+readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
+authors = [
+    { name = "Pulkit Jain", email = "4352360+pulkitj@users.noreply.github.com" },
+]
+keywords = ["llm", "hallucination", "grounding", "verification", "rag", "ai", "faithfulness"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/pulkitj/groundguard"
+Repository = "https://github.com/pulkitj/groundguard"
+"Bug Tracker" = "https://github.com/pulkitj/groundguard/issues"
 dependencies = [
     "litellm>=1.0",
     "pydantic>=2.0",

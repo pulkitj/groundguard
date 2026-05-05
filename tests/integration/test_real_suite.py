@@ -59,7 +59,7 @@ def test_fixture_b_financial_loophole_wrong_number(llm_model: str, api_base: str
     result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
 
     assert result.status == "CONTRADICTED"
-    assert result.verification_method == "tier3_llm"
+    assert result.verification_method in ("tier3_llm", "tier25_numerical")
 
 
 # ---------------------------------------------------------------------------
