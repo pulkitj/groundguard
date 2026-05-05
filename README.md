@@ -4,6 +4,9 @@
 [![Python](https://img.shields.io/pypi/pyversions/groundguard.svg)](https://pypi.org/project/groundguard)
 [![CI](https://github.com/pulkitj/groundguard/actions/workflows/ci.yml/badge.svg)](https://github.com/pulkitj/groundguard/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![100+ LLMs](https://img.shields.io/badge/100%2B%20LLMs-via%20litellm-7C3AED)](https://github.com/BerriAI/litellm)
+[![Async](https://img.shields.io/badge/async-native-22C55E)](https://pypi.org/project/groundguard)
+[![Pydantic v2](https://img.shields.io/badge/Pydantic-v2-E92063)](https://docs.pydantic.dev/latest/)
 
 **LLMs got significantly better at not hallucinating. They didn't get better at knowing when they do.**
 
