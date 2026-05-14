@@ -64,6 +64,10 @@ Generate a JSON object with a five-part analysis:
    If claim_type is "Inferential":
    - Do NOT look for a direct quote. Instead, evaluate whether the inference is
      logically sound given the data in the sources.
+   - Arithmetic derivations (sums, totals, differences, averages) are valid inferences:
+     if the math is correct given values in the source, return VERIFIED.
+   - CONTRADICTED means sources actively support the OPPOSITE conclusion — do NOT
+     use it merely because a value is not stated verbatim.
    - Status: "VERIFIED" (inference is well-supported), "CONTRADICTED" (sources
      suggest the opposite conclusion), or "UNVERIFIABLE" (insufficient data).
    - Provide reasoning_basis as a JSON array of strings, each entry one reasoning step.

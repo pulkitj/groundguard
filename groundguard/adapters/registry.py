@@ -208,15 +208,39 @@ OPENAI_REASONING_ADAPTER = ModelAdapter(
 # ---------------------------------------------------------------------------
 # ANTHROPIC_ADAPTER — anthropic/ prefix and claude- prefix models
 # ---------------------------------------------------------------------------
+def _anthropic_build_kwargs(base: dict) -> dict:
+    import os
+    base = dict(base)
+    api_base = base.get("api_base", "")
+    has_real_key = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
+    if api_base and not has_real_key:
+        # Ollama's /v1/messages endpoint doesn't reliably honour forced tool_choice
+        # (litellm translates response_format → tools+tool_choice for Anthropic).
+        # Redirect to ollama_chat/ so structured output works via the OpenAI-compat
+        # endpoint. parse_response still uses ctx.model ("anthropic/…") → ANTHROPIC_ADAPTER
+        # post_process, so think-tag stripping is exercised on the real response.
+        model = base.get("model", "")
+        if model.startswith("anthropic/"):
+            base["model"] = "ollama_chat/" + model[len("anthropic/"):]
+        options = base.get("extra_body", {}).get("options", {})
+        options.setdefault("num_ctx", 16384)
+        base.setdefault("extra_body", {})["options"] = options
+        base.setdefault("extra_body", {}).setdefault("keep_alive", 300)
+    return base
+
+
 def _anthropic_post_process(response: Any, model: str = "") -> str:
     content = response.choices[0].message.content or ""
+    # Strip <think> tags emitted by local thinking models (e.g. qwen3 via Ollama).
+    # Real Claude models do not emit <think> in content, so this is safe for both paths.
+    content = _strip_think_tags(content)
     # Never use message.parsed — force raw content path to avoid litellm #20533
     return _strip_fences(content)
 
 
 ANTHROPIC_ADAPTER = ModelAdapter(
     name="anthropic",
-    build_kwargs=lambda base: dict(base),
+    build_kwargs=_anthropic_build_kwargs,
     post_process=_anthropic_post_process,
 )
 

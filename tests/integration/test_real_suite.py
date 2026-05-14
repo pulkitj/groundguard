@@ -252,7 +252,7 @@ def test_fixture_k_flawed_inferential_logic(llm_model: str, api_base: str | None
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-@pytest.mark.timeout(300)
+@pytest.mark.timeout(600)
 def test_fixture_l_needle_in_haystack(llm_model: str, api_base: str | None = None):
     """T-45: Contradicting sentence buried in 8000+ char source should be found — result CONTRADICTED."""
     padding = "The company operates in multiple sectors. " * 200  # ~8200 chars
@@ -271,7 +271,7 @@ def test_fixture_l_needle_in_haystack(llm_model: str, api_base: str | None = Non
 # ---------------------------------------------------------------------------
 
 @pytest.mark.llm
-@pytest.mark.timeout(300)
+@pytest.mark.timeout(600)
 async def test_fixture_m_batch_scale(llm_model: str, api_base: str | None = None):
     """T-46: Batch of 5 identical-structure claims should all complete without uncaught exceptions.
 

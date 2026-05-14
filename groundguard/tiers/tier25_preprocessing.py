@@ -115,6 +115,12 @@ def build_evidence_bundle(ctx: "VerificationContext", chunks: list, top_k: int =
 
 def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
     """Run numerical consistency check."""
+    # Inferential claims are arithmetic derivations (sums, totals, etc.).
+    # Exact numeric match would incorrectly flag $5+$10=$15 as a conflict.
+    # Skip tier25 for these and let the LLM reason about the inference.
+    if ctx.tier0_atoms and all(a.claim_type == "Inferential" for a in ctx.tier0_atoms):
+        return Tier25Result(has_conflict=False, evidence_bundle=build_evidence_bundle(ctx, chunks))
+
     # Extract numbers from claim
     claim_numbers_raw = re.findall(_NUMBER_PATTERN, ctx.claim)
     if not claim_numbers_raw:

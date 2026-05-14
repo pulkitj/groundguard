@@ -8,6 +8,7 @@ INFERENTIAL_SIGNALS = {
     "appears to", "likely", "projected", "based on", "derived from",
     "analysis shows", "pattern", "forecast", "outlook", "implies",
     "consistent with", "points to", "expected to",
+    "total", "combined", "aggregate",
 }
 
 # Decimal-safe sentence splitter: splits on [.!?] NOT between two digits, or newlines.
