@@ -549,7 +549,15 @@ def verify_answer(
     faithfulness_threshold: float = None,
     model: str = "gpt-4o-mini",
     max_spend: float = float("inf"),
+    auto_chunk: bool = True,
 ) -> GroundingResult:
+    """Verify that an answer is grounded in the provided sources.
+
+    auto_chunk: Pass False when using large-context models (Gemini 1.5 Pro, Claude 3.5+) to
+        send each source as a single unit without BM25 sliding-window chunking. Avoids the
+        Lost Context Problem where low-scoring chunks containing negating context are dropped.
+        Note: verify_answer uses evaluate_faithfulness, not the Tier 2/3 pipeline.
+    """
     from groundguard.models.result import VerificationAuditRecord
 
     if profile is None:
@@ -562,6 +570,7 @@ def verify_answer(
         model=model,
         cost_tracker=SharedCostTracker(max_spend=max_spend),
         profile=profile,
+        auto_chunk=auto_chunk,
     )
     chunks = chunker.chunk_sources(ctx)
 
@@ -654,7 +663,15 @@ async def averify_answer(
     faithfulness_threshold: float = None,
     model: str = "gpt-4o-mini",
     max_spend: float = float("inf"),
+    auto_chunk: bool = True,
 ) -> GroundingResult:
+    """Async version of verify_answer.
+
+    auto_chunk: Pass False when using large-context models (Gemini 1.5 Pro, Claude 3.5+) to
+        send each source as a single unit without BM25 sliding-window chunking. Avoids the
+        Lost Context Problem where low-scoring chunks containing negating context are dropped.
+        Note: verify_answer uses evaluate_faithfulness, not the Tier 2/3 pipeline.
+    """
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         None,
@@ -664,6 +681,7 @@ async def averify_answer(
             faithfulness_threshold=faithfulness_threshold,
             model=model,
             max_spend=max_spend,
+            auto_chunk=auto_chunk,
         ),
     )
 

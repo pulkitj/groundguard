@@ -150,3 +150,79 @@ def test_verify_answer_fatal_contradiction_overrides_score_threshold(mocker):
     assert result.is_grounded is False
     assert result.status == 'NOT_GROUNDED'
 
+
+def test_verify_answer_auto_chunk_false_wraps_source_without_splitting(mocker):
+    from groundguard.core.verifier import verify_answer
+    from groundguard.models.result import Source
+
+    captured = {}
+
+    def capture_faithfulness(ctx, chunks):
+        captured["chunks"] = chunks
+        return _mock_grounding_result("GROUNDED", score=1.0)
+
+    mocker.patch(
+        "groundguard.tiers.tier3_evaluation.evaluate_faithfulness",
+        side_effect=capture_faithfulness,
+    )
+
+    src = Source(source_id="s1", content="Revenue was $4.2M.")
+    verify_answer("Revenue was $4.2M.", [src], model="gpt-4o-mini", auto_chunk=False)
+
+    assert len(captured["chunks"]) == 1
+    assert captured["chunks"][0].text_content == src.content
+
+
+def test_averify_answer_auto_chunk_false_forwarded_to_verify_answer(mocker):
+    import asyncio
+    from groundguard.core.verifier import averify_answer
+    from groundguard.models.result import Source
+
+    verify_mock = mocker.patch(
+        "groundguard.core.verifier.verify_answer",
+        return_value=_mock_grounding_result("GROUNDED", score=1.0),
+    )
+
+    src = Source(source_id="s1", content="Revenue was $4.2M.")
+    asyncio.run(averify_answer("Revenue was $4.2M.", [src], auto_chunk=False))
+
+    call_kwargs = verify_mock.call_args[1]
+    assert call_kwargs.get("auto_chunk") is False
+
+
+def test_verify_answer_auto_chunk_false_with_majority_vote_all_calls_receive_unwrapped_chunks(mocker):
+    from groundguard.core.verifier import verify_answer
+    from groundguard.models.result import Source
+    from groundguard.profiles import VerificationProfile
+
+    mv_profile = VerificationProfile(
+        name="test_mv",
+        faithfulness_threshold=0.8,
+        tier2_lexical_threshold=0.85,
+        bm25_top_k=3,
+        majority_vote=True,
+        audit=False,
+    )
+
+    call_chunk_counts = []
+
+    def capture_faithfulness(ctx, chunks):
+        call_chunk_counts.append(len(chunks))
+        return _mock_grounding_result("GROUNDED", score=1.0)
+
+    mocker.patch(
+        "groundguard.tiers.tier3_evaluation.evaluate_faithfulness",
+        side_effect=capture_faithfulness,
+    )
+
+    src = Source(source_id="s1", content="Revenue was $4.2M.")
+    verify_answer(
+        "Revenue was $4.2M.", [src],
+        model="gpt-4o-mini",
+        auto_chunk=False,
+        profile=mv_profile,
+    )
+
+    assert len(call_chunk_counts) == 3  # majority vote makes exactly 3 calls
+    assert all(n == 1 for n in call_chunk_counts)  # every call gets 1 unwrapped chunk
+
