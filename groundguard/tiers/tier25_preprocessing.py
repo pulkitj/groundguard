@@ -57,20 +57,6 @@ def _is_within_range(source_val: float, claim_vals: list[float]) -> bool:
     return lo <= source_val <= hi
 
 
-def _is_arithmetic_derivation(claim_val: float, all_source_vals: list[float]) -> bool:
-    """Return True if claim_val equals the sum of all source values (within 1% tolerance).
-
-    Detects cases like "Total H1 = $15M" where sources provide "$5M Q1" and "$10M Q2".
-    Only triggers when there are at least 2 source values (a single matching value would
-    have passed the exact-match check already).
-    """
-    if len(all_source_vals) < 2:
-        return False
-    total = sum(all_source_vals)
-    if total == 0:
-        return claim_val == 0
-    return abs(claim_val - total) / abs(total) < 0.01
-
 
 def extract_contextual_years(text: str) -> list[str]:
     """Return only years that appear in temporal context."""
@@ -158,15 +144,6 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
     conflict_citation = None
     evidence_bundle = build_evidence_bundle(ctx, chunks)
 
-    # Collect all source numbers up-front for arithmetic derivation check
-    all_source_floats: list[float] = []
-    for _c in chunks:
-        for _n in re.findall(_NUMBER_PATTERN, _c.text_content):
-            try:
-                all_source_floats.append(float(_normalise_number(_n)))
-            except ValueError:
-                pass
-
     for chunk in chunks:
         chunk_numbers_raw = re.findall(_NUMBER_PATTERN, chunk.text_content)
         chunk_floats = []
@@ -221,9 +198,9 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
             else:
                 # Exact match check
                 if chunk_floats and claim_float not in chunk_floats:
-                    # Before flagging conflict: check if claim_float is the arithmetic
-                    # sum of ALL source values (e.g. "Total H1=$15M" where Q1=$5M + Q2=$10M).
-                    if _is_arithmetic_derivation(claim_float, all_source_floats):
+                    # Only flag when source has exactly one number: ambiguous arithmetic
+                    # context (≥2 source values) passes to Tier 3 for LLM reasoning.
+                    if len(chunk_floats) > 1:
                         continue
                     # Mismatch found
                     chunk_raw = chunk_numbers_raw[0] if chunk_numbers_raw else ""
