@@ -1,4 +1,3 @@
-import pytest
 import re
 
 
@@ -185,3 +184,29 @@ def test_tier25_detects_conflict_for_negative_vs_positive():
                   char_start=0, char_end=28, token_count=6)
     result = run(ctx, [chunk])
     assert result.has_conflict is True
+
+
+def test_tier25_arithmetic_sum_not_flagged_as_conflict():
+    """Tier 2.5 must not flag arithmetic derivations as conflicts.
+
+    When the claim value equals the sum of source values ($5M + $10M = $15M),
+    it is a valid arithmetic derivation — Tier 2.5 must pass it through to Tier 3.
+    """
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+    src = Source(source_id="r", content="Q1 revenue was $5 million. Q2 revenue was $10 million.")
+    ctx = VerificationContext(
+        claim="Total H1 revenue was $15 million.",
+        original_sources=[src],
+        model="gpt-4o-mini",
+    )
+    chunk = Chunk(chunk_id="c1", source_id="r",
+                  text_content="Q1 revenue was $5 million. Q2 revenue was $10 million.",
+                  char_start=0, char_end=53, token_count=10)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False, (
+        "Tier 2.5 must not flag $5M+$10M=$15M as a conflict — "
+        "arithmetic sum of source values equals claim value"
+    )

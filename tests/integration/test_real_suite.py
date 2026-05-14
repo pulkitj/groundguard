@@ -248,58 +248,6 @@ def test_fixture_k_flawed_inferential_logic(llm_model: str, api_base: str | None
 
 
 # ---------------------------------------------------------------------------
-# T-45 — Fixture L: Needle in Haystack
-# ---------------------------------------------------------------------------
-
-@pytest.mark.llm
-@pytest.mark.timeout(600)
-def test_fixture_l_needle_in_haystack(llm_model: str, api_base: str | None = None):
-    """T-45: Contradicting sentence buried in 8000+ char source should be found — result CONTRADICTED."""
-    padding = "The company operates in multiple sectors. " * 200  # ~8200 chars
-    contradicting = "The Q3 net profit was negative, with a loss of $2 million."
-    source_content = padding + contradicting
-    claim = "The company reported a profit of $2 million in Q3."
-    sources = [Source(content=source_content, source_id="report.pdf")]
-
-    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
-
-    assert result.status == "CONTRADICTED"
-
-
-# ---------------------------------------------------------------------------
-# T-46 — Fixture M: Batch Scale
-# ---------------------------------------------------------------------------
-
-@pytest.mark.llm
-@pytest.mark.timeout(600)
-async def test_fixture_m_batch_scale(llm_model: str, api_base: str | None = None):
-    """T-46: Batch of 5 identical-structure claims should all complete without uncaught exceptions.
-
-    Runs as a native async test (pytest-asyncio) so the timeout can interrupt the event loop
-    on Windows — asyncio.run() inside a sync test cannot be interrupted by pytest's thread timeout.
-    Batch reduced to 5 items (max_concurrency=3) so worst-case runtime fits within 300s.
-    """
-    inputs = [
-        ClaimInput(
-            claim=f"Revenue in period {i} was ${i} million.",
-            sources=[Source(
-                content=f"Revenue in period {i} was ${i} million.",
-                source_id=f"doc{i}.pdf"
-            )]
-        )
-        for i in range(1, 6)
-    ]
-
-    results = await verify_batch_async(inputs=inputs, model=llm_model, max_concurrency=3, max_spend=5.0, api_base=api_base)
-
-    assert len(results) == 5
-    for result in results:
-        assert result.status in VALID_STATUSES, (
-            f"Unexpected status in batch result: {result.status}"
-        )
-
-
-# ---------------------------------------------------------------------------
 # T-47 — Fixture N: Tier 1 Pass → Pipeline Continues
 # ---------------------------------------------------------------------------
 
@@ -429,3 +377,55 @@ def test_fixture_r_branch_b_partial_match(llm_model: str, api_base: str | None =
     assert result.status in ("VERIFIED", "UNVERIFIABLE"), (
         f"Expected VERIFIED or UNVERIFIABLE for partial match, got: {result.status}"
     )
+
+
+# ---------------------------------------------------------------------------
+# T-45 — Fixture L: Needle in Haystack (long context — run last)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.llm
+@pytest.mark.timeout(600)
+def test_fixture_l_needle_in_haystack(llm_model: str, api_base: str | None = None):
+    """T-45: Contradicting sentence buried in 8000+ char source should be found — result CONTRADICTED."""
+    padding = "The company operates in multiple sectors. " * 200  # ~8200 chars
+    contradicting = "The Q3 net profit was negative, with a loss of $2 million."
+    source_content = padding + contradicting
+    claim = "The company reported a profit of $2 million in Q3."
+    sources = [Source(content=source_content, source_id="report.pdf")]
+
+    result = verify(claim=claim, sources=sources, model=llm_model, api_base=api_base)
+
+    assert result.status == "CONTRADICTED"
+
+
+# ---------------------------------------------------------------------------
+# T-46 — Fixture M: Batch Scale (long-running — run last)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.llm
+@pytest.mark.timeout(600)
+async def test_fixture_m_batch_scale(llm_model: str, api_base: str | None = None):
+    """T-46: Batch of 5 identical-structure claims should all complete without uncaught exceptions.
+
+    Runs as a native async test (pytest-asyncio) so the timeout can interrupt the event loop
+    on Windows — asyncio.run() inside a sync test cannot be interrupted by pytest's thread timeout.
+    Batch reduced to 5 items (max_concurrency=3) so worst-case runtime fits within 300s.
+    """
+    inputs = [
+        ClaimInput(
+            claim=f"Revenue in period {i} was ${i} million.",
+            sources=[Source(
+                content=f"Revenue in period {i} was ${i} million.",
+                source_id=f"doc{i}.pdf"
+            )]
+        )
+        for i in range(1, 6)
+    ]
+
+    results = await verify_batch_async(inputs=inputs, model=llm_model, max_concurrency=3, max_spend=5.0, api_base=api_base)
+
+    assert len(results) == 5
+    for result in results:
+        assert result.status in VALID_STATUSES, (
+            f"Unexpected status in batch result: {result.status}"
+        )

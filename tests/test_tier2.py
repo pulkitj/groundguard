@@ -132,36 +132,3 @@ def test_branch_c_vocabulary_overlap_low_score(mocker):
 
     assert result.decision == RoutingDecision.ESCALATE_ALL_LOW_SCORE
     assert result.highest_score == pytest.approx(0.005)
-
-
-# ---------------------------------------------------------------------------
-# Tier 2.5 — Inferential claims bypass numerical pre-check
-# ---------------------------------------------------------------------------
-
-def test_tier25_skips_numerical_check_for_inferential_claims():
-    """Arithmetic derivations (e.g. $5M + $10M = $15M) must not be flagged as
-    numerical conflicts.  Tier 2.5 must skip the numeric check when all atoms
-    are Inferential and let Tier 3 reason about the inference."""
-    from groundguard.core.classifier import parse_and_classify
-    from groundguard.tiers import tier25_preprocessing
-    from groundguard.models.internal import VerificationContext
-
-    claim = "Total H1 revenue was $15 million."
-    atoms = parse_and_classify(claim)
-    assert all(a.claim_type == "Inferential" for a in atoms), (
-        "Classifier should mark 'Total ...' as Inferential — check INFERENTIAL_SIGNALS"
-    )
-
-    ctx = VerificationContext(
-        claim=claim,
-        original_sources=[Source(content="Q1 revenue was $5 million. Q2 revenue was $10 million.", source_id="r")],
-        model="gpt-4o-mini",
-        tier0_atoms=atoms,
-    )
-    chunks = [Chunk(source_id="r", text_content="Q1 revenue was $5 million. Q2 revenue was $10 million.", char_start=0, char_end=53)]
-    result = tier25_preprocessing.run(ctx, chunks)
-
-    assert result.has_conflict is False, (
-        "Tier 2.5 must not flag $5M+$10M=$15M as a conflict — "
-        "arithmetic derivations are Inferential claims, not Extractive mismatches"
-    )
