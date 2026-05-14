@@ -39,7 +39,11 @@ These parameters are caller-controlled. They change behaviour but do not affect 
 
 **`api_base`** — passed to litellm for custom endpoints (e.g. local Ollama, Azure deployments).
 
-**`auto_chunk`** — default `True`. When `True`, long sources are split by a sliding-window chunker and BM25 retrieves the top-k chunks for Tier 3. When `False`, full source content is forwarded to Tier 3 without chunking — recommended for large-context models to avoid the Lost Context Problem (negating clauses in low-scoring chunks not reaching the LLM).
+**`auto_chunk`** — default `True`. When `True`, long sources are split by a sliding-window chunker and BM25 retrieves the top-k chunks for the evaluation tier. When `False`, full source content is forwarded without chunking — recommended for large-context models to avoid the Lost Context Problem (negating clauses in low-scoring chunks not reaching the LLM).
+
+Applies to all six entry points: `verify`, `averify`, `verify_answer`, `averify_answer`, `verify_analysis`, `averify_analysis`, `verify_clause`, `averify_clause`.
+
+Note: `verify_answer` uses `evaluate_faithfulness` (not the Tier 2/3 pipeline); the `auto_chunk=False` effect is identical — sources are wrapped one-per-chunk without BM25 sliding-window splitting.
 
 ---
 

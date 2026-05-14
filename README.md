@@ -288,16 +288,41 @@ The pipeline stops at the first tier that produces a verdict. Most claims in a w
 
 ### Large-context models
 
+By default, BM25 retrieves the top-k chunks by keyword relevance. A negating clause in a low-scoring chunk — *"that provision was superseded by amendment 3"* — may not reach Tier 3. Set `auto_chunk=False` when your model can fit the full document in context to eliminate this risk.
+
+`auto_chunk=False` is supported by all six verification entry points: `verify`, `averify`, `verify_answer`, `averify_answer`, `verify_analysis`, `averify_analysis`, `verify_clause`, and `averify_clause`.
+
 ```python
+# All entry points accept auto_chunk=False for large-context models:
+
 result = verify(
     claim="...",
     sources=[Source(content=long_document, source_id="contract.pdf")],
     model="gemini-2.0-flash",
     auto_chunk=False,   # pass the full document — no BM25 chunking
 )
-```
 
-By default, BM25 retrieves the top-k chunks by keyword relevance. A negating clause in a low-scoring chunk — *"that provision was superseded by amendment 3"* — may not reach Tier 3. Set `auto_chunk=False` when your model can fit the full document in context to eliminate this risk.
+result = verify_answer(
+    output="The acquisition closed in Q2.",
+    sources=[Source(content=long_document, source_id="contract.pdf")],
+    model="gemini-2.0-flash",
+    auto_chunk=False,
+)
+
+result = verify_analysis(
+    analysis="Revenue grew 30% YoY. Headcount declined.",
+    sources=[Source(content=long_document, source_id="report.pdf")],
+    model="claude-3-5-sonnet-20241022",
+    auto_chunk=False,
+)
+
+result = verify_clause(
+    clause="Payment is due within 30 days.",
+    sources=[Source(content=long_contract, source_id="agreement.pdf")],
+    model="gemini-1.5-pro",
+    auto_chunk=False,
+)
+```
 
 ---
 
