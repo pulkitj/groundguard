@@ -489,8 +489,15 @@ def verify_analysis(
     max_spend: float = float("inf"),
     api_base: str | None = None,
     audit: bool | None = None,
+    auto_chunk: bool = True,
 ) -> GroundingResult:
-    """Verify that analysis_text is grounded in sources by extracting and checking each claim."""
+    """Verify that analysis_text is grounded in sources by extracting and checking each claim.
+
+    auto_chunk: Pass False when using large-context models (Gemini 1.5 Pro, Claude 3.5+) to
+        send each source as a single unit without BM25 sliding-window chunking. Avoids the
+        Lost Context Problem where low-scoring chunks containing negating context are dropped.
+        Applied uniformly to all extracted claims in the batch.
+    """
     profile = profile or GENERAL_PROFILE
 
     try:
@@ -509,7 +516,7 @@ def verify_analysis(
         ClaimInput(claim=c, sources=sources, model=model)
         for c in claims
     ]
-    results = verify_batch(inputs, model=model, max_spend=max_spend)
+    results = verify_batch(inputs, model=model, max_spend=max_spend, auto_chunk=auto_chunk)
 
     return _aggregate_analysis_results(results, profile)
 
@@ -522,8 +529,15 @@ async def averify_analysis(
     max_spend: float = float("inf"),
     api_base: str | None = None,
     audit: bool | None = None,
+    auto_chunk: bool = True,
 ) -> GroundingResult:
-    """Pure-async implementation: no thread pool, no secondary event loop."""
+    """Pure-async implementation: no thread pool, no secondary event loop.
+
+    auto_chunk: Pass False when using large-context models (Gemini 1.5 Pro, Claude 3.5+) to
+        send each source as a single unit without BM25 sliding-window chunking. Avoids the
+        Lost Context Problem where low-scoring chunks containing negating context are dropped.
+        Applied uniformly to all extracted claims in the batch.
+    """
     profile = profile or GENERAL_PROFILE
     try:
         claims = await claim_extractor.extract_claims_async(
@@ -537,7 +551,7 @@ async def averify_analysis(
             evaluation_method="claim_extraction",
         )
     inputs = [ClaimInput(claim=c, sources=sources, model=model) for c in claims]
-    results = await averify_batch(inputs, model=model, max_spend=max_spend)
+    results = await averify_batch(inputs, model=model, max_spend=max_spend, auto_chunk=auto_chunk)
     return _aggregate_analysis_results(results, profile)
 
 
@@ -715,7 +729,16 @@ def verify_clause(
     model: str = "gpt-4o-mini",
     max_spend: float = float("inf"),
     api_base: str | None = None,
+    auto_chunk: bool = True,
 ):
+    """Decompose and verify a legal clause against source documents.
+
+    auto_chunk: Pass False when using large-context models (Gemini 1.5 Pro, Claude 3.5+) to
+        send each source as a single unit without BM25 sliding-window chunking. Avoids the
+        Lost Context Problem where low-scoring chunks containing negating context are dropped.
+        Particularly relevant for long contract documents where modal operators and definitions
+        may appear far from the main proposition.
+    """
     from groundguard.profiles import STRICT_PROFILE
     profile = profile or STRICT_PROFILE
     unit = decompose_clause(clause_text)
@@ -738,6 +761,7 @@ def verify_clause(
         api_base=api_base,
         profile=profile,
         context=context,
+        auto_chunk=auto_chunk,
     )
 
 
@@ -750,7 +774,16 @@ async def averify_clause(
     model: str = "gpt-4o-mini",
     max_spend: float = float("inf"),
     api_base: str | None = None,
+    auto_chunk: bool = True,
 ):
+    """Async version of verify_clause.
+
+    auto_chunk: Pass False when using large-context models (Gemini 1.5 Pro, Claude 3.5+) to
+        send each source as a single unit without BM25 sliding-window chunking. Avoids the
+        Lost Context Problem where low-scoring chunks containing negating context are dropped.
+        Particularly relevant for long contract documents where modal operators and definitions
+        may appear far from the main proposition.
+    """
     from groundguard.profiles import STRICT_PROFILE
     profile = profile or STRICT_PROFILE
     unit = decompose_clause(clause_text)
@@ -773,4 +806,5 @@ async def averify_clause(
         api_base=api_base,
         profile=profile,
         context=context,
+        auto_chunk=auto_chunk,
     )

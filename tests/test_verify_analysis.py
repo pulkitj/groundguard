@@ -141,3 +141,44 @@ def test_averify_analysis_returns_coroutine(mocker):
     )
     assert result is not None
     assert result.score == 1.0
+
+
+def test_verify_analysis_auto_chunk_false_passed_to_each_claim(mocker):
+    from groundguard.core.verifier import verify_analysis
+    from groundguard.models.result import Source
+
+    mocker.patch(
+        "groundguard.core.verifier.claim_extractor.extract_claims",
+        return_value=["Revenue was $5M."],
+    )
+    averify_mock = mocker.patch(
+        "groundguard.core.verifier.averify",
+        return_value=_mock_atomic("VERIFIED"),
+    )
+
+    src = Source(source_id="s1", content="Revenue was $5M.")
+    verify_analysis("Revenue was $5M.", [src], auto_chunk=False)
+
+    averify_mock.assert_called_once()
+    assert averify_mock.call_args[1].get("auto_chunk") is False
+
+
+def test_averify_analysis_auto_chunk_false_passed_to_each_claim(mocker):
+    import asyncio
+    from groundguard.core.verifier import averify_analysis
+    from groundguard.models.result import Source
+
+    mocker.patch(
+        "groundguard.core.verifier.claim_extractor.extract_claims_async",
+        return_value=["Revenue was $5M."],
+    )
+    averify_mock = mocker.patch(
+        "groundguard.core.verifier.averify",
+        return_value=_mock_atomic("VERIFIED"),
+    )
+
+    src = Source(source_id="s1", content="Revenue was $5M.")
+    asyncio.run(averify_analysis("Revenue was $5M.", [src], auto_chunk=False))
+
+    averify_mock.assert_called_once()
+    assert averify_mock.call_args[1].get("auto_chunk") is False

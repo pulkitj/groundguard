@@ -92,3 +92,56 @@ def test_averify_clause_preprocessing_synchronous(mocker):
         averify_clause("The party shall comply.", [src], model="gpt-4o-mini")
     )
     assert len(decompose_calls) == 1
+
+
+@pytest.mark.legal
+def test_verify_clause_auto_chunk_false_passed_to_verify(mocker):
+    from groundguard.core.verifier import verify_clause
+
+    clause_unit = mocker.MagicMock()
+    clause_unit.subordinate_modifiers = []
+    clause_unit.modal_operator = "shall"
+    clause_unit.defined_terms_referenced = []
+    clause_unit.main_proposition = "Payment is due within 30 days."
+
+    mocker.patch(
+        "groundguard.core.verifier.decompose_clause",
+        return_value=clause_unit,
+    )
+    verify_mock = mocker.patch(
+        "groundguard.core.verifier.verify",
+        return_value=_mock_atomic_result("VERIFIED"),
+    )
+
+    src = Source(source_id="s1", content="Payment terms are 30 days net.")
+    verify_clause("Payment is due within 30 days.", [src], auto_chunk=False)
+
+    verify_mock.assert_called_once()
+    assert verify_mock.call_args[1].get("auto_chunk") is False
+
+
+@pytest.mark.legal
+def test_averify_clause_auto_chunk_false_passed_to_averify(mocker):
+    import asyncio
+    from groundguard.core.verifier import averify_clause
+
+    clause_unit = mocker.MagicMock()
+    clause_unit.subordinate_modifiers = []
+    clause_unit.modal_operator = "shall"
+    clause_unit.defined_terms_referenced = []
+    clause_unit.main_proposition = "Payment is due within 30 days."
+
+    mocker.patch(
+        "groundguard.core.verifier.decompose_clause",
+        return_value=clause_unit,
+    )
+    averify_mock = mocker.patch(
+        "groundguard.core.verifier.averify",
+        return_value=_mock_atomic_result("VERIFIED"),
+    )
+
+    src = Source(source_id="s1", content="Payment terms are 30 days net.")
+    asyncio.run(averify_clause("Payment is due within 30 days.", [src], auto_chunk=False))
+
+    averify_mock.assert_called_once()
+    assert averify_mock.call_args[1].get("auto_chunk") is False
