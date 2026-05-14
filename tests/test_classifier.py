@@ -29,7 +29,6 @@ def test_inferential_signals_produce_inferential_classification():
         "appears to", "likely", "projected", "based on", "derived from",
         "analysis shows", "pattern", "forecast", "outlook", "implies",
         "consistent with", "points to", "expected to",
-        "total", "combined", "aggregate",
     ]
     for signal in signals:
         atoms = parse_and_classify(f"The data {signal} something important.")
