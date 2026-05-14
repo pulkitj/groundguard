@@ -226,7 +226,7 @@ Chunker (loaders/chunker.py):    Chunk  ← defined here, not in models/
 
 **`parse_response(response, model)`** — routes via `get_adapter(model).post_process()`. OLLAMA_ADAPTER strips `<think>` tags (rfind-based; regex fallback), falls back to `reasoning_content` if content is empty. DEFAULT adapter strips markdown fences. Retry catches `pydantic.ValidationError`, `ValueError`, and `IndexError` (the last covers `choices=[]` edge case).
 
-**`auto_chunk=False`** — recommended for large-context models (Gemini 1.5 Pro, Claude 3.5+). BM25 can silently drop low-scoring chunks that contain negating context ("Lost Context Problem").
+**`auto_chunk=False`** — recommended for large-context models (Gemini 1.5 Pro, Claude 3.5+). BM25 can silently drop low-scoring chunks that contain negating context ("Lost Context Problem"). Supported by all six entry points: `verify`, `averify`, `verify_answer`, `averify_answer`, `verify_analysis`, `averify_analysis`, `verify_clause`, `averify_clause`. The routing logic lives inside `chunker.chunk_sources()` — `verify_answer` calls it directly; `verify()` has a redundant outer `if ctx.auto_chunk` branch that is a known cleanup item.
 
 **Exception contract** — `verify()` / `averify()` are fail-loud (all exceptions propagate except `ParseError` → returned as `status="PARSE_ERROR"`). `verify_batch_async()` is fail-contained (all exceptions absorbed per item). This asymmetry is intentional — see `plan/engineering_design_update.md` §8.
 
