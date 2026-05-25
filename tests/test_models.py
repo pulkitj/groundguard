@@ -83,3 +83,26 @@ def test_verification_context_explicit_param_wins_over_profile():
             faithfulness_threshold=0.5,
         )
     assert ctx._effective_faithfulness_threshold == 0.5  # explicit wins over profile
+
+
+def test_claim_input_auto_chunk_default_is_none():
+    """ClaimInput has auto_chunk defaulting to None."""
+    from groundguard.models.internal import ClaimInput
+    from groundguard.models.result import Source
+
+    inp = ClaimInput(claim="Revenue was $5M.", sources=[Source(content="Revenue was $5M.", source_id="doc1.pdf")])
+    assert inp.auto_chunk is None
+
+
+def test_verification_context_has_context_field():
+    """VerificationContext accepts context parameter and stores it, defaulting to None."""
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+
+    sources = [Source(content="y", source_id="s1")]
+    ctx1 = VerificationContext(claim="x", sources=sources, context="task")
+    assert ctx1.context == "task"
+
+    ctx2 = VerificationContext(claim="x", sources=sources)
+    assert ctx2.context is None
+

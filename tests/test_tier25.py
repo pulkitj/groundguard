@@ -210,3 +210,76 @@ def test_tier25_arithmetic_sum_not_flagged_as_conflict():
         "Tier 2.5 must not flag $5M+$10M=$15M as a conflict — "
         "arithmetic sum of source values equals claim value"
     )
+
+
+# ---------------------------------------------------------------------------
+# Tier 2.5 Year Subset and Premature Break Fixes
+# ---------------------------------------------------------------------------
+
+def test_year_subset_no_false_positive():
+    """chunk has years {2022, 2023}, claim has year {2023} -> no conflict (subset is fine)."""
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    src = Source(source_id="s1", content="In 2022 and 2023, growth was steady.")
+    ctx = VerificationContext(claim="In 2023, growth was steady.", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="In 2022 and 2023, growth was steady.",
+                  char_start=0, char_end=36, token_count=8)
+
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+
+
+def test_year_mismatch_is_conflict():
+    """chunk has years {2022}, claim has year {2023} -> conflict (disjoint years)."""
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    src = Source(source_id="s1", content="In 2022, growth was steady.")
+    ctx = VerificationContext(claim="In 2023, growth was steady.", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="In 2022, growth was steady.",
+                  char_start=0, char_end=27, token_count=6)
+
+    result = run(ctx, [chunk])
+    assert result.has_conflict is True
+
+
+def test_later_chunk_clears_year_conflict():
+    """Chunk 1 has year {2022}, Chunk 2 has year {2023}, claim has year {2023} -> no conflict."""
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    src = Source(source_id="s1", content="In 2022 growth was high. In 2023 growth was high.")
+    ctx = VerificationContext(claim="In 2023 growth was high.", sources=[src])
+    chunk1 = Chunk(chunk_id="c1", source_id="s1", text_content="In 2022 growth was high.",
+                   char_start=0, char_end=24, token_count=5)
+    chunk2 = Chunk(chunk_id="c2", source_id="s1", text_content="In 2023 growth was high.",
+                   char_start=25, char_end=49, token_count=5)
+
+    result = run(ctx, [chunk1, chunk2])
+    assert result.has_conflict is False
+
+
+def test_later_chunk_clears_number_conflict():
+    """Chunk 1 has number 4.5, Chunk 2 has number 4.2, claim asserts 4.2 -> no conflict."""
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    src = Source(source_id="s1", content="Revenue was $4.5M in Q1. Revenue was $4.2M in Q2.")
+    ctx = VerificationContext(claim="Revenue was $4.2M.", sources=[src])
+    chunk1 = Chunk(chunk_id="c1", source_id="s1", text_content="Revenue was $4.5M in Q1.",
+                   char_start=0, char_end=24, token_count=6)
+    chunk2 = Chunk(chunk_id="c2", source_id="s1", text_content="Revenue was $4.2M in Q2.",
+                   char_start=25, char_end=49, token_count=6)
+
+    result = run(ctx, [chunk1, chunk2])
+    assert result.has_conflict is False
+

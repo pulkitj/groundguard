@@ -413,3 +413,34 @@ def test_prompt_specifies_reasoning_basis_as_array():
     assert "array" in surrounding or "list of" in surrounding, (
         "reasoning_basis instruction must explicitly say 'array' or 'list of'"
     )
+
+
+def test_render_prompt_includes_context_when_set():
+    """render_prompt includes task context block only when context is provided."""
+    from groundguard.models.result import Source
+    from groundguard.models.internal import VerificationContext
+    from groundguard.tiers.tier3_evaluation import render_prompt
+
+    sources = [Source(content="Revenue was $5M.", source_id="doc.pdf")]
+
+    ctx_with_context = VerificationContext(
+        claim="Revenue was $5M.",
+        original_sources=sources,
+        model="gpt-4o-mini",
+        context="task: summarise risks",
+    )
+
+    p1 = render_prompt(ctx_with_context, [])
+    assert "task: summarise risks" in p1
+    assert "Task context:" in p1
+
+    ctx_no_context = VerificationContext(
+        claim="Revenue was $5M.",
+        original_sources=sources,
+        model="gpt-4o-mini",
+        context=None,
+    )
+
+    p2 = render_prompt(ctx_no_context, [])
+    assert "Task context:" not in p2
+

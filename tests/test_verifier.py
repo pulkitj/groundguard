@@ -537,3 +537,123 @@ def test_averify_profile_param(mocker):
         averify("x", [src], profile=GENERAL_PROFILE, model="gpt-4o-mini")
     )
     assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# auto_chunk Discoverability & Per-Item Control
+# ---------------------------------------------------------------------------
+
+def test_verify_structured_propagates_auto_chunk(mocker):
+    """verify_structured(auto_chunk=False) calls verify() with auto_chunk=False."""
+    from pydantic import BaseModel
+    from groundguard.core.verifier import verify_structured
+
+    class SimpleSchema(BaseModel):
+        claim: str
+
+    mock_verify = mocker.patch("groundguard.core.verifier.verify")
+    sources = _sources()
+
+    verify_structured(
+        claim_dict={"claim": "test"},
+        schema=SimpleSchema,
+        sources=sources,
+        auto_chunk=False,
+    )
+
+    mock_verify.assert_called_once()
+    kwargs = mock_verify.call_args.kwargs
+    assert kwargs.get("auto_chunk") is False
+
+
+def test_verify_forwards_context_to_verification_context(mocker):
+    """verify(..., context="...") constructs VerificationContext with context="..."."""
+    from groundguard.core.verifier import verify
+
+    mock_context_cls = mocker.patch("groundguard.core.verifier.VerificationContext")
+    mocker.patch("groundguard.core.verifier.classifier.parse_and_classify", return_value=[])
+    mocker.patch("groundguard.core.verifier.chunker.chunk_sources", return_value=[])
+    mocker.patch("groundguard.core.verifier.tier25_preprocessing.run", return_value=MagicMock(has_conflict=False))
+    mocker.patch("groundguard.core.verifier.tier2_semantic.route_claim", return_value=MagicMock(decision=RoutingDecision.SKIP_LLM_HIGH_CONFIDENCE))
+    mocker.patch("groundguard.core.verifier.ResultBuilder.build_lexical_pass", return_value=_verified_result())
+
+    verify(claim="Revenue was $5M.", sources=_sources(), context="task: compare")
+
+    mock_context_cls.assert_called_once()
+    kwargs = mock_context_cls.call_args.kwargs
+    assert kwargs.get("context") == "task: compare"
+
+
+def test_verify_answer_forwards_api_base_and_context(mocker):
+    """verify_answer(..., context="...", api_base="...") constructs VerificationContext with both."""
+    from groundguard.core.verifier import verify_answer
+
+    mock_context_cls = mocker.patch("groundguard.core.verifier.VerificationContext")
+    mocker.patch("groundguard.core.verifier.chunker.chunk_sources", return_value=[])
+    mocker.patch("groundguard.core.verifier.tier3_evaluation.evaluate_faithfulness", return_value=MagicMock(status="GROUNDED", score=1.0))
+
+    verify_answer(
+        answer="Revenue was $5M.",
+        sources=_sources(),
+        context="task: ctx",
+        api_base="http://localhost:11434",
+    )
+
+    mock_context_cls.assert_called_once()
+    kwargs = mock_context_cls.call_args.kwargs
+    assert kwargs.get("context") == "task: ctx"
+    assert kwargs.get("api_base") == "http://localhost:11434"
+
+
+def test_verify_pins_tier1_chunk_into_tier2_top_k(mocker):
+    """check_fuzzy returns a sentinel chunk not in top_k -> evaluate is called with the chunk included."""
+    from groundguard.core.verifier import verify
+
+    _apply_base_patches(mocker)
+
+    sentinel_chunk = Chunk(source_id="doc.pdf", text_content="Sentinel", char_start=100, char_end=120)
+    mocker.patch("groundguard.core.verifier.tier1_authenticity.check_fuzzy", return_value=sentinel_chunk)
+
+    normal_chunk = Chunk(source_id="doc.pdf", text_content="Normal", char_start=0, char_end=16)
+    t2_res = Tier2Result(
+        decision=RoutingDecision.ESCALATE_TO_LLM,
+        top_k_chunks=[normal_chunk],
+        highest_score=0.5,
+    )
+    mocker.patch("groundguard.core.verifier.tier2_semantic.route_claim", return_value=t2_res)
+
+    mock_evaluate = mocker.patch("groundguard.core.verifier.tier3_evaluation.evaluate", return_value=_valid_t3())
+
+    verify(claim="Revenue was $5M.", sources=_sources(), agent_provided_evidence="Sentinel")
+
+    mock_evaluate.assert_called_once()
+    called_chunks = mock_evaluate.call_args[0][1]
+    assert sentinel_chunk in called_chunks
+    assert normal_chunk in called_chunks
+
+
+def test_verify_does_not_duplicate_pinned_chunk(mocker):
+    """check_fuzzy returns sentinel chunk which is already in top_k -> evaluate called with chunk once."""
+    from groundguard.core.verifier import verify
+
+    _apply_base_patches(mocker)
+
+    sentinel_chunk = Chunk(source_id="doc.pdf", text_content="Sentinel", char_start=100, char_end=120)
+    mocker.patch("groundguard.core.verifier.tier1_authenticity.check_fuzzy", return_value=sentinel_chunk)
+
+    t2_res = Tier2Result(
+        decision=RoutingDecision.ESCALATE_TO_LLM,
+        top_k_chunks=[sentinel_chunk],
+        highest_score=0.5,
+    )
+    mocker.patch("groundguard.core.verifier.tier2_semantic.route_claim", return_value=t2_res)
+
+    mock_evaluate = mocker.patch("groundguard.core.verifier.tier3_evaluation.evaluate", return_value=_valid_t3())
+
+    verify(claim="Revenue was $5M.", sources=_sources(), agent_provided_evidence="Sentinel")
+
+    mock_evaluate.assert_called_once()
+    called_chunks = mock_evaluate.call_args[0][1]
+    assert len(called_chunks) == 1
+    assert called_chunks[0] == sentinel_chunk
+

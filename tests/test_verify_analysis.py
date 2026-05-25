@@ -182,3 +182,161 @@ def test_averify_analysis_auto_chunk_false_passed_to_each_claim(mocker):
 
     averify_mock.assert_called_once()
     assert averify_mock.call_args[1].get("auto_chunk") is False
+
+
+# ---------------------------------------------------------------------------
+# verify_analysis / averify_analysis / verify_clause spec tests
+# ---------------------------------------------------------------------------
+
+def test_verify_analysis_forwards_api_base(mocker):
+    from groundguard.core.verifier import verify_analysis
+    from groundguard.models.result import Source
+
+    mocker.patch("groundguard.core.claim_extractor.extract_claims", return_value=["Claim A."])
+    mock_verify_batch = mocker.patch("groundguard.core.verifier.verify_batch", return_value=[])
+
+    src = Source(source_id="s1", content="Revenue was $5M.")
+    verify_analysis("Revenue was $5M.", [src], api_base="http://localhost:11434")
+
+    mock_verify_batch.assert_called_once()
+    kwargs = mock_verify_batch.call_args.kwargs
+    assert kwargs.get("api_base") == "http://localhost:11434"
+
+
+def test_verify_analysis_forwards_profile(mocker):
+    from groundguard.core.verifier import verify_analysis
+    from groundguard.models.result import Source
+    from groundguard.profiles import STRICT_PROFILE
+
+    mocker.patch("groundguard.core.claim_extractor.extract_claims", return_value=["Claim A."])
+    mock_verify_batch = mocker.patch("groundguard.core.verifier.verify_batch", return_value=[])
+
+    src = Source(source_id="s1", content="Revenue was $5M.")
+    verify_analysis("Revenue was $5M.", [src], profile=STRICT_PROFILE)
+
+    mock_verify_batch.assert_called_once()
+    kwargs = mock_verify_batch.call_args.kwargs
+    assert kwargs.get("profile") is STRICT_PROFILE
+
+
+def test_verify_analysis_audit_true_sets_profile_audit(mocker):
+    from groundguard.core.verifier import verify_analysis
+    from groundguard.models.result import Source
+    from groundguard.profiles import GENERAL_PROFILE
+
+    mocker.patch("groundguard.core.claim_extractor.extract_claims", return_value=["Claim A."])
+    mock_verify_batch = mocker.patch("groundguard.core.verifier.verify_batch", return_value=[])
+
+    src = Source(source_id="s1", content="Revenue was $5M.")
+    verify_analysis("Revenue was $5M.", [src], profile=GENERAL_PROFILE, audit=True)
+
+    mock_verify_batch.assert_called_once()
+    kwargs = mock_verify_batch.call_args.kwargs
+    forwarded_profile = kwargs.get("profile")
+    assert forwarded_profile is not GENERAL_PROFILE
+    assert forwarded_profile.audit is True
+
+
+def test_verify_analysis_audit_false_does_not_modify_profile(mocker):
+    from groundguard.core.verifier import verify_analysis
+    from groundguard.models.result import Source
+    from groundguard.profiles import GENERAL_PROFILE
+
+    mocker.patch("groundguard.core.claim_extractor.extract_claims", return_value=["Claim A."])
+    mock_verify_batch = mocker.patch("groundguard.core.verifier.verify_batch", return_value=[])
+
+    src = Source(source_id="s1", content="Revenue was $5M.")
+    verify_analysis("Revenue was $5M.", [src], profile=GENERAL_PROFILE, audit=False)
+
+    mock_verify_batch.assert_called_once()
+    kwargs = mock_verify_batch.call_args.kwargs
+    forwarded_profile = kwargs.get("profile")
+    assert forwarded_profile is GENERAL_PROFILE
+    assert forwarded_profile.audit is False
+
+
+def test_verify_analysis_forwards_context_to_extract_claims(mocker):
+    from groundguard.core.verifier import verify_analysis
+    from groundguard.models.result import Source
+
+    mock_extract = mocker.patch("groundguard.core.claim_extractor.extract_claims", return_value=["Claim A."])
+    mocker.patch("groundguard.core.verifier.verify_batch", return_value=[])
+
+    src = Source(source_id="s1", content="Revenue was $5M.")
+    verify_analysis("Revenue was $5M.", [src], context="task: check risks")
+
+    mock_extract.assert_called_once()
+    kwargs = mock_extract.call_args.kwargs
+    assert kwargs.get("context") == "task: check risks"
+
+
+async def test_averify_analysis_forwards_api_base_and_profile(mocker):
+    from groundguard.core.verifier import averify_analysis
+    from groundguard.models.result import Source
+    from groundguard.profiles import STRICT_PROFILE
+
+    mocker.patch("groundguard.core.claim_extractor.extract_claims_async", return_value=["Claim A."])
+    mock_averify_batch = mocker.patch("groundguard.core.verifier.averify_batch", return_value=[])
+
+    src = Source(source_id="s1", content="Revenue was $5M.")
+    await averify_analysis("Revenue was $5M.", [src], api_base="http://localhost:11434", profile=STRICT_PROFILE)
+
+    mock_averify_batch.assert_called_once()
+    kwargs = mock_averify_batch.call_args.kwargs
+    assert kwargs.get("api_base") == "http://localhost:11434"
+    assert kwargs.get("profile") is STRICT_PROFILE
+
+
+def test_verify_analysis_forwards_chunker_params(mocker):
+    from groundguard.core.verifier import verify_analysis
+    from groundguard.models.result import Source
+
+    mocker.patch("groundguard.core.claim_extractor.extract_claims", return_value=["Claim A."])
+    mock_verify_batch = mocker.patch("groundguard.core.verifier.verify_batch", return_value=[])
+
+    src = Source(source_id="s1", content="Revenue was $5M.")
+    verify_analysis(
+        "Revenue was $5M.",
+        [src],
+        chunk_size=200,
+        chunk_overlap=20,
+        max_source_tokens=4000,
+        tier1_min_similarity=0.95,
+    )
+
+    mock_verify_batch.assert_called_once()
+    kwargs = mock_verify_batch.call_args.kwargs
+    assert kwargs.get("chunk_size") == 200
+    assert kwargs.get("chunk_overlap") == 20
+    assert kwargs.get("max_source_tokens") == 4000
+    assert kwargs.get("tier1_min_similarity") == 0.95
+
+
+def test_verify_clause_forwards_chunker_params_and_audit(mocker):
+    from groundguard.core.verifier import verify_clause
+    from groundguard.models.result import Source
+    from groundguard.profiles import GENERAL_PROFILE
+
+    mock_verify = mocker.patch("groundguard.core.verifier.verify")
+
+    src = Source(source_id="s1", content="Revenue was $5M.")
+    verify_clause(
+        "Revenue was $5M.",
+        [src],
+        profile=GENERAL_PROFILE,
+        chunk_size=300,
+        chunk_overlap=30,
+        max_source_tokens=6000,
+        tier1_min_similarity=0.95,
+        audit=True,
+    )
+
+    mock_verify.assert_called_once()
+    kwargs = mock_verify.call_args.kwargs
+    assert kwargs.get("chunk_size") == 300
+    assert kwargs.get("chunk_overlap") == 30
+    assert kwargs.get("max_source_tokens") == 6000
+    assert kwargs.get("tier1_min_similarity") == 0.95
+    forwarded_profile = kwargs.get("profile")
+    assert forwarded_profile.audit is True
+

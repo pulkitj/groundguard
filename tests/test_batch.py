@@ -597,3 +597,64 @@ async def test_mid_batch_cost_exhaustion(mocker):
     skipped = statuses.count("SKIPPED_DUE_TO_COST")
     verified = statuses.count("VERIFIED")
     assert verified + skipped == 5, f"Unexpected statuses: {statuses}"
+
+
+# ---------------------------------------------------------------------------
+# auto_chunk Propagation and Per-Item Control
+# ---------------------------------------------------------------------------
+
+async def test_claim_input_auto_chunk_none_inherits_batch_true(mocker):
+    """ClaimInput(auto_chunk=None) + batch auto_chunk=True -> averify called with auto_chunk=True."""
+    from groundguard.core.verifier import verify_batch_async
+
+    mock_averify = mocker.patch("groundguard.core.verifier.averify", new_callable=AsyncMock)
+    inputs = [ClaimInput(claim="Claim A", sources=[_src()], auto_chunk=None)]
+
+    await verify_batch_async(inputs=inputs, auto_chunk=True)
+
+    mock_averify.assert_called_once()
+    kwargs = mock_averify.call_args.kwargs
+    assert kwargs.get("auto_chunk") is True
+
+
+async def test_claim_input_auto_chunk_false_overrides_batch_true(mocker):
+    """ClaimInput(auto_chunk=False) + batch auto_chunk=True -> averify called with auto_chunk=False."""
+    from groundguard.core.verifier import verify_batch_async
+
+    mock_averify = mocker.patch("groundguard.core.verifier.averify", new_callable=AsyncMock)
+    inputs = [ClaimInput(claim="Claim A", sources=[_src()], auto_chunk=False)]
+
+    await verify_batch_async(inputs=inputs, auto_chunk=True)
+
+    mock_averify.assert_called_once()
+    kwargs = mock_averify.call_args.kwargs
+    assert kwargs.get("auto_chunk") is False
+
+
+async def test_claim_input_auto_chunk_true_overrides_batch_false(mocker):
+    """ClaimInput(auto_chunk=True) + batch auto_chunk=False -> averify called with auto_chunk=True."""
+    from groundguard.core.verifier import verify_batch_async
+
+    mock_averify = mocker.patch("groundguard.core.verifier.averify", new_callable=AsyncMock)
+    inputs = [ClaimInput(claim="Claim A", sources=[_src()], auto_chunk=True)]
+
+    await verify_batch_async(inputs=inputs, auto_chunk=False)
+
+    mock_averify.assert_called_once()
+    kwargs = mock_averify.call_args.kwargs
+    assert kwargs.get("auto_chunk") is True
+
+
+def test_verify_batch_propagates_auto_chunk_to_averify_batch(mocker):
+    """verify_batch(auto_chunk=False) passes auto_chunk=False explicitly to averify_batch (not via **kwargs)."""
+    from groundguard.core.verifier import verify_batch
+
+    mock_averify_batch = mocker.patch("groundguard.core.verifier.averify_batch", new_callable=AsyncMock)
+    inputs = [ClaimInput(claim="Claim A", sources=[_src()])]
+
+    verify_batch(inputs=inputs, auto_chunk=False)
+
+    mock_averify_batch.assert_called_once()
+    kwargs = mock_averify_batch.call_args.kwargs
+    assert kwargs.get("auto_chunk") is False
+
