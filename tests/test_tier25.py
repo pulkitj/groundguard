@@ -223,10 +223,10 @@ def test_year_subset_no_false_positive():
     from groundguard.models.result import Source
     from groundguard.loaders.chunker import Chunk
 
-    src = Source(source_id="s1", content="In 2022 and 2023, growth was steady.")
+    src = Source(source_id="s1", content="In 2022 and in 2023, growth was steady.")
     ctx = VerificationContext(claim="In 2023, growth was steady.", sources=[src])
-    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="In 2022 and 2023, growth was steady.",
-                  char_start=0, char_end=36, token_count=8)
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="In 2022 and in 2023, growth was steady.",
+                  char_start=0, char_end=39, token_count=9)
 
     result = run(ctx, [chunk])
     assert result.has_conflict is False

@@ -65,6 +65,7 @@ def verify(
         tier1_min_similarity=tier1_min_similarity,
         agent_provided_evidence=agent_provided_evidence,
         api_base=api_base,
+        context=context,
         cost_tracker=tracker,
         profile=profile,
         tier2_lexical_threshold=profile.tier2_lexical_threshold,
@@ -117,12 +118,29 @@ def verify(
             total_cost_usd=ctx.cost_tracker.total_cost_usd,
         )
 
-    if ctx.agent_provided_evidence:
-        tier1_authenticity.check_fuzzy(
+    tier1_chunk = None
+    if isinstance(ctx.agent_provided_evidence, str) and ctx.agent_provided_evidence:
+        tier1_chunk = tier1_authenticity.check_fuzzy(
             ctx.agent_provided_evidence, chunks, ctx.tier1_min_similarity
         )
 
     t2_res = tier2_semantic.route_claim(ctx, chunks)
+
+    if tier1_chunk is not None:
+        existing_ids = {c.chunk_id for c in t2_res.top_k_chunks if c.chunk_id}
+        is_duplicate = False
+        if tier1_chunk.chunk_id:
+            is_duplicate = tier1_chunk.chunk_id in existing_ids
+        else:
+            is_duplicate = any(
+                c.source_id == tier1_chunk.source_id and
+                c.char_start == tier1_chunk.char_start and
+                c.char_end == tier1_chunk.char_end and
+                c.text_content == tier1_chunk.text_content
+                for c in t2_res.top_k_chunks
+            )
+        if not is_duplicate:
+            t2_res.top_k_chunks.append(tier1_chunk)
 
     if t2_res.decision == RoutingDecision.SKIP_LLM_HIGH_CONFIDENCE:
         result = ResultBuilder.build_lexical_pass(ctx, t2_res.top_k_chunks)
@@ -215,6 +233,7 @@ async def averify(
         tier1_min_similarity=tier1_min_similarity,
         agent_provided_evidence=agent_provided_evidence,
         api_base=api_base,
+        context=context,
         cost_tracker=tracker,
         profile=profile,
         tier2_lexical_threshold=profile.tier2_lexical_threshold,
@@ -245,8 +264,9 @@ async def averify(
             total_cost_usd=ctx.cost_tracker.total_cost_usd,
         )
 
-    if ctx.agent_provided_evidence:
-        tier1_authenticity.check_fuzzy(
+    tier1_chunk = None
+    if isinstance(ctx.agent_provided_evidence, str) and ctx.agent_provided_evidence:
+        tier1_chunk = tier1_authenticity.check_fuzzy(
             ctx.agent_provided_evidence, chunks, ctx.tier1_min_similarity
         )
 
@@ -255,6 +275,22 @@ async def averify(
     t2_res = await loop.run_in_executor(
         None, tier2_semantic.route_claim, ctx, chunks
     )
+
+    if tier1_chunk is not None:
+        existing_ids = {c.chunk_id for c in t2_res.top_k_chunks if c.chunk_id}
+        is_duplicate = False
+        if tier1_chunk.chunk_id:
+            is_duplicate = tier1_chunk.chunk_id in existing_ids
+        else:
+            is_duplicate = any(
+                c.source_id == tier1_chunk.source_id and
+                c.char_start == tier1_chunk.char_start and
+                c.char_end == tier1_chunk.char_end and
+                c.text_content == tier1_chunk.text_content
+                for c in t2_res.top_k_chunks
+            )
+        if not is_duplicate:
+            t2_res.top_k_chunks.append(tier1_chunk)
 
     if t2_res.decision == RoutingDecision.SKIP_LLM_HIGH_CONFIDENCE:
         result = ResultBuilder.build_lexical_pass(ctx, t2_res.top_k_chunks)
@@ -309,6 +345,8 @@ async def averify_batch(
     model: str = "gpt-4o-mini",
     max_concurrency: int = 5,
     max_spend: float = 0.50,
+    auto_chunk: bool = True,
+    cost_tracker = None,
     **kwargs,
 ) -> list[VerificationResult]:
     """
@@ -328,17 +366,19 @@ async def averify_batch(
             "Use the max_spend parameter directly."
         )
 
-    tracker = SharedCostTracker(max_spend=max_spend)
+    tracker = cost_tracker or SharedCostTracker(max_spend=max_spend)
     semaphore = asyncio.Semaphore(max_concurrency)
 
     async def _sem_bounded_verify(inp: ClaimInput) -> VerificationResult:
         async with semaphore:
+            item_auto_chunk = auto_chunk if inp.auto_chunk is None else inp.auto_chunk
             return await averify(
                 claim=inp.claim,
                 sources=inp.sources,
                 model=inp.model or model,
                 agent_provided_evidence=inp.agent_provided_evidence,
                 cost_tracker=tracker,
+                auto_chunk=item_auto_chunk,
                 **kwargs,
             )
 
@@ -393,6 +433,8 @@ def verify_batch(
     model: str = "gpt-4o-mini",
     max_concurrency: int = 5,
     max_spend: float = 0.50,
+    auto_chunk: bool = True,
+    cost_tracker = None,
     **kwargs,
 ) -> list[VerificationResult]:
     """
@@ -408,6 +450,8 @@ def verify_batch(
             model=model,
             max_concurrency=max_concurrency,
             max_spend=max_spend,
+            auto_chunk=auto_chunk,
+            cost_tracker=cost_tracker,
             **kwargs,
         )
     )
@@ -451,6 +495,12 @@ def _aggregate_analysis_results(results: list, profile=None) -> GroundingResult:
     denom = supported + contradicted + errored
     score = supported / denom if denom > 0 else 0.0
 
+    all_audit_records = []
+    for r in results:
+        if hasattr(r, "audit_records") and r.audit_records:
+            all_audit_records.extend(r.audit_records)
+    audit_records = all_audit_records if all_audit_records else None
+
     # Special case: all UNVERIFIABLE (denom == 0 but results not empty)
     if results and all(r.status == "UNVERIFIABLE" for r in results):
         return GroundingResult(
@@ -460,6 +510,7 @@ def _aggregate_analysis_results(results: list, profile=None) -> GroundingResult:
             evaluation_method="claim_extraction",
             total_units=len(results),
             unverifiable_units=len(results),
+            audit_records=audit_records,
         )
 
     if score >= profile.faithfulness_threshold:
@@ -478,18 +529,24 @@ def _aggregate_analysis_results(results: list, profile=None) -> GroundingResult:
         grounded_units=supported,
         ungrounded_units=contradicted,
         unverifiable_units=sum(1 for r in results if r.status == "UNVERIFIABLE"),
+        audit_records=audit_records,
     )
 
 
 def verify_analysis(
     analysis_text: str,
     sources: list,
+    context: str | None = None,
     model: str = "gpt-4o-mini",
     profile=None,
     max_spend: float = float("inf"),
     api_base: str | None = None,
-    audit: bool | None = None,
+    audit: bool = False,
     auto_chunk: bool = True,
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
+    max_source_tokens: int = 8000,
+    tier1_min_similarity: float = 0.90,
 ) -> GroundingResult:
     """Verify that analysis_text is grounded in sources by extracting and checking each claim.
 
@@ -499,10 +556,14 @@ def verify_analysis(
         Applied uniformly to all extracted claims in the batch.
     """
     profile = profile or GENERAL_PROFILE
+    if audit and not profile.audit:
+        import dataclasses as _dc
+        profile = _dc.replace(profile, audit=True)
 
+    tracker = SharedCostTracker(max_spend=max_spend)
     try:
         claims = claim_extractor.extract_claims(
-            analysis_text, sources, model, max_spend=max_spend, api_base=api_base
+            analysis_text, sources, model, context=context, max_spend=max_spend, api_base=api_base, cost_tracker=tracker, audit=audit
         )
     except ParseError:
         return GroundingResult(
@@ -516,7 +577,19 @@ def verify_analysis(
         ClaimInput(claim=c, sources=sources, model=model)
         for c in claims
     ]
-    results = verify_batch(inputs, model=model, max_spend=max_spend, auto_chunk=auto_chunk)
+    results = verify_batch(
+        inputs,
+        model=model,
+        max_spend=max_spend,
+        auto_chunk=auto_chunk,
+        api_base=api_base,
+        profile=profile,
+        cost_tracker=tracker,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        max_source_tokens=max_source_tokens,
+        tier1_min_similarity=tier1_min_similarity,
+    )
 
     return _aggregate_analysis_results(results, profile)
 
@@ -524,12 +597,17 @@ def verify_analysis(
 async def averify_analysis(
     analysis_text: str,
     sources: list,
+    context: str | None = None,
     model: str = "gpt-4o-mini",
     profile=None,
     max_spend: float = float("inf"),
     api_base: str | None = None,
-    audit: bool | None = None,
+    audit: bool = False,
     auto_chunk: bool = True,
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
+    max_source_tokens: int = 8000,
+    tier1_min_similarity: float = 0.90,
 ) -> GroundingResult:
     """Pure-async implementation: no thread pool, no secondary event loop.
 
@@ -539,9 +617,14 @@ async def averify_analysis(
         Applied uniformly to all extracted claims in the batch.
     """
     profile = profile or GENERAL_PROFILE
+    if audit and not profile.audit:
+        import dataclasses as _dc
+        profile = _dc.replace(profile, audit=True)
+
+    tracker = SharedCostTracker(max_spend=max_spend)
     try:
         claims = await claim_extractor.extract_claims_async(
-            analysis_text, sources, model, max_spend=max_spend, api_base=api_base
+            analysis_text, sources, model, context=context, max_spend=max_spend, api_base=api_base, cost_tracker=tracker, audit=audit
         )
     except ParseError:
         return GroundingResult(
@@ -551,19 +634,38 @@ async def averify_analysis(
             evaluation_method="claim_extraction",
         )
     inputs = [ClaimInput(claim=c, sources=sources, model=model) for c in claims]
-    results = await averify_batch(inputs, model=model, max_spend=max_spend, auto_chunk=auto_chunk)
+    results = await averify_batch(
+        inputs,
+        model=model,
+        max_spend=max_spend,
+        auto_chunk=auto_chunk,
+        api_base=api_base,
+        profile=profile,
+        cost_tracker=tracker,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        max_source_tokens=max_source_tokens,
+        tier1_min_similarity=tier1_min_similarity,
+    )
     return _aggregate_analysis_results(results, profile)
 
 
 def verify_answer(
     answer: str,
     sources: list,
+    context: str | None = None,
     *,
     profile: VerificationProfile = None,
     faithfulness_threshold: float = None,
     model: str = "gpt-4o-mini",
     max_spend: float = float("inf"),
     auto_chunk: bool = True,
+    api_base: str | None = None,
+    audit: bool = False,
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
+    max_source_tokens: int = 8000,
+    tier1_min_similarity: float = 0.90,
 ) -> GroundingResult:
     """Verify that an answer is grounded in the provided sources.
 
@@ -574,8 +676,11 @@ def verify_answer(
     """
     from groundguard.models.result import VerificationAuditRecord
 
-    if profile is None:
-        profile = GENERAL_PROFILE
+    profile = profile or GENERAL_PROFILE
+    if audit and not profile.audit:
+        import dataclasses as _dc
+        profile = _dc.replace(profile, audit=True)
+
     threshold = faithfulness_threshold if faithfulness_threshold is not None else profile.faithfulness_threshold
 
     ctx = VerificationContext(
@@ -585,10 +690,17 @@ def verify_answer(
         cost_tracker=SharedCostTracker(max_spend=max_spend),
         profile=profile,
         auto_chunk=auto_chunk,
+        api_base=api_base,
+        context=context,
+        chunk_size_tokens=chunk_size,
+        chunk_overlap_tokens=chunk_overlap,
+        max_source_tokens=max_source_tokens,
+        tier1_min_similarity=tier1_min_similarity,
     )
     chunks = chunker.chunk_sources(ctx)
 
     result = tier3_evaluation.evaluate_faithfulness(ctx, chunks)
+    audit_records = getattr(result, "audit_records", None)
 
     if profile.majority_vote:
         results = [result]
@@ -660,6 +772,7 @@ def verify_answer(
         score=result.score,
         status=result.status if not is_grounded else "GROUNDED",
         evaluation_method=result.evaluation_method,
+        audit_records=audit_records,
     )
     logger.info(
         "verify_answer() completion [boundary=%s]",
@@ -672,12 +785,19 @@ def verify_answer(
 async def averify_answer(
     answer: str,
     sources: list,
+    context: str | None = None,
     *,
     profile: VerificationProfile = None,
     faithfulness_threshold: float = None,
     model: str = "gpt-4o-mini",
     max_spend: float = float("inf"),
     auto_chunk: bool = True,
+    api_base: str | None = None,
+    audit: bool = False,
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
+    max_source_tokens: int = 8000,
+    tier1_min_similarity: float = 0.90,
 ) -> GroundingResult:
     """Async version of verify_answer.
 
@@ -690,12 +810,18 @@ async def averify_answer(
     return await loop.run_in_executor(
         None,
         lambda: verify_answer(
-            answer, sources,
+            answer, sources, context,
             profile=profile,
             faithfulness_threshold=faithfulness_threshold,
             model=model,
             max_spend=max_spend,
             auto_chunk=auto_chunk,
+            api_base=api_base,
+            audit=audit,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            max_source_tokens=max_source_tokens,
+            tier1_min_similarity=tier1_min_similarity,
         ),
     )
 
@@ -704,6 +830,7 @@ def verify_structured(
     claim_dict: dict,
     schema: type[pydantic.BaseModel],
     sources: list,
+    auto_chunk: bool = True,
     **kwargs,
 ) -> VerificationResult:
     """
@@ -717,7 +844,7 @@ def verify_structured(
         raise ValueError(f"claim_dict does not conform to the provided schema: {e}")
 
     flattened = dict_to_string_flattener(normalised)
-    return verify(claim=flattened, sources=sources, **kwargs)
+    return verify(claim=flattened, sources=sources, auto_chunk=auto_chunk, **kwargs)
 
 
 def verify_clause(
@@ -730,6 +857,11 @@ def verify_clause(
     max_spend: float = float("inf"),
     api_base: str | None = None,
     auto_chunk: bool = True,
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
+    max_source_tokens: int = 8000,
+    tier1_min_similarity: float = 0.90,
+    audit: bool = False,
 ):
     """Decompose and verify a legal clause against source documents.
 
@@ -741,6 +873,9 @@ def verify_clause(
     """
     from groundguard.profiles import STRICT_PROFILE
     profile = profile or STRICT_PROFILE
+    if audit and not profile.audit:
+        import dataclasses as _dc
+        profile = _dc.replace(profile, audit=True)
     unit = decompose_clause(clause_text)
     context_parts = [
         f"Clause modifiers: {unit.subordinate_modifiers}",
@@ -762,6 +897,10 @@ def verify_clause(
         profile=profile,
         context=context,
         auto_chunk=auto_chunk,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        max_source_tokens=max_source_tokens,
+        tier1_min_similarity=tier1_min_similarity,
     )
 
 
@@ -775,6 +914,11 @@ async def averify_clause(
     max_spend: float = float("inf"),
     api_base: str | None = None,
     auto_chunk: bool = True,
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
+    max_source_tokens: int = 8000,
+    tier1_min_similarity: float = 0.90,
+    audit: bool = False,
 ):
     """Async version of verify_clause.
 
@@ -786,6 +930,9 @@ async def averify_clause(
     """
     from groundguard.profiles import STRICT_PROFILE
     profile = profile or STRICT_PROFILE
+    if audit and not profile.audit:
+        import dataclasses as _dc
+        profile = _dc.replace(profile, audit=True)
     unit = decompose_clause(clause_text)
     context_parts = [
         f"Clause modifiers: {unit.subordinate_modifiers}",
@@ -807,4 +954,8 @@ async def averify_clause(
         profile=profile,
         context=context,
         auto_chunk=auto_chunk,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        max_source_tokens=max_source_tokens,
+        tier1_min_similarity=tier1_min_similarity,
     )

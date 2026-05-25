@@ -60,7 +60,26 @@ def _is_within_range(source_val: float, claim_vals: list[float]) -> bool:
 
 def extract_contextual_years(text: str) -> list[str]:
     """Return only years that appear in temporal context."""
-    return re.findall(_YEAR_CONTEXT_PATTERN, text, re.IGNORECASE)
+    # Find all temporal prefixes
+    prefix_pattern = r'\b(?:in|for|during|as\s+of|fiscal|FY|Q[1-4])\b'
+    years = []
+    
+    for match in re.finditer(prefix_pattern, text, re.IGNORECASE):
+        start_idx = match.end()
+        # Look ahead up to 100 characters
+        sub = text[start_idx:start_idx+100]
+        m = re.match(r'^\s*(\d{4})(?:\s*(?:and|or|to|,)\s*(\d{4}))*', sub, re.IGNORECASE)
+        if m:
+            matched_str = m.group(0)
+            list_years = re.findall(r'\b\d{4}\b', matched_str)
+            years.extend(list_years)
+            
+    # Direct formats like FY2024 or Q32023
+    direct_pattern = r'\b(?:FY|Q[1-4])(\d{4})\b'
+    for match in re.finditer(direct_pattern, text, re.IGNORECASE):
+        years.append(match.group(1))
+        
+    return years
 
 
 @dataclass
@@ -82,7 +101,7 @@ class Tier25Result:
 
 def extract_excerpt_from_chunk(chunk: "Chunk", pattern: str) -> "tuple[str, int, int] | None":
     """Find first regex match in chunk.text_content; return (text, start, end) or None."""
-    m = re.search(pattern, chunk.text_content)
+    m = re.search(pattern, chunk.text_content, re.IGNORECASE)
     if m:
         return m.group(0), m.start(), m.end()
     return None
@@ -144,6 +163,32 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
     conflict_citation = None
     evidence_bundle = build_evidence_bundle(ctx, chunks)
 
+    # Year conflict check loop
+    year_conflict_citation = None
+    for chunk in chunks:
+        chunk_years = set(extract_contextual_years(chunk.text_content))
+        if claim_years and chunk_years and claim_years.issubset(chunk_years):
+            # at least one chunk supports the claim year — no conflict
+            year_conflict_citation = None
+            break
+        if claim_years and chunk_years and not claim_years.issubset(chunk_years):
+            # tentative conflict — keep looking in case a later chunk matches
+            excerpt_result = extract_excerpt_from_chunk(chunk, _YEAR_CONTEXT_PATTERN)
+            if excerpt_result and year_conflict_citation is None:
+                excerpt_text, start, end = excerpt_result
+                year_conflict_citation = Citation(
+                    source_id=chunk.source_id,
+                    excerpt=excerpt_text,
+                    excerpt_char_start=chunk.char_start + start,
+                    excerpt_char_end=chunk.char_start + end,
+                )
+    else:
+        # Loop completed without finding a supporting chunk
+        if year_conflict_citation is not None:
+            conflict_found = True
+            conflict_citation = year_conflict_citation
+
+    matched_floats = set()
     for chunk in chunks:
         chunk_numbers_raw = re.findall(_NUMBER_PATTERN, chunk.text_content)
         chunk_floats = []
@@ -152,22 +197,6 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                 chunk_floats.append(float(_normalise_number(n)))
             except ValueError:
                 pass
-
-        chunk_years = set(extract_contextual_years(chunk.text_content))
-
-        # Year conflict check: if both have contextual years and they differ → conflict
-        if claim_years and chunk_years and claim_years != chunk_years:
-            conflict_found = True
-            excerpt_result = extract_excerpt_from_chunk(chunk, _YEAR_CONTEXT_PATTERN)
-            if excerpt_result:
-                excerpt_text, start, end = excerpt_result
-                conflict_citation = Citation(
-                    source_id=chunk.source_id,
-                    excerpt=excerpt_text,
-                    excerpt_char_start=chunk.char_start + start,
-                    excerpt_char_end=chunk.char_start + end,
-                )
-            break
 
         # For each claim number, check against chunk numbers
         for i, claim_float in enumerate(claim_floats):
@@ -210,9 +239,8 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                         match=False,
                         chunk_id=chunk.chunk_id,
                     ))
-                    conflict_found = True
                     # Build citation pointing to the conflicting value in chunk
-                    if chunk_raw:
+                    if chunk_raw and conflict_citation is None:
                         excerpt_result = extract_excerpt_from_chunk(chunk, re.escape(chunk_raw))
                         if excerpt_result:
                             excerpt_text, start, end = excerpt_result
@@ -222,14 +250,24 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                                 excerpt_char_start=chunk.char_start + start,
                                 excerpt_char_end=chunk.char_start + end,
                             )
-                    break
+                    continue
                 elif chunk_floats and claim_float in chunk_floats:
+                    matched_floats.add(claim_float)
                     checks.append(NumericalCheckResult(
                         claim_number=claim_raw,
                         source_number=str(claim_float),
                         match=True,
                         chunk_id=chunk.chunk_id,
                     ))
+
+    if not conflict_found:
+        if not is_range_claim and claim_floats:
+            if all(cf in matched_floats for cf in claim_floats):
+                conflict_found = False
+                conflict_citation = None
+            else:
+                if conflict_citation is not None:
+                    conflict_found = True
 
     # For range claim: conflict if NO chunk value falls within the range
     # Only run if no conflict was already found (e.g. by the year check)

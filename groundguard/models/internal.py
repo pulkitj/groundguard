@@ -82,6 +82,7 @@ class VerificationContext:
 
     agent_provided_evidence: str | None = None
     api_base: str | None = None
+    context: str | None = None   # task context for Tier 3 prompt enrichment
 
     cost_tracker: SharedCostTracker = field(
         default_factory=lambda: SharedCostTracker(max_spend=float('inf'))
@@ -152,3 +153,4 @@ class ClaimInput:
     sources: list[Source]
     agent_provided_evidence: str | None = None
     model: str | None = None
+    auto_chunk: bool | None = None  # None = inherit batch default
