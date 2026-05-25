@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 
 import litellm
 import pydantic
@@ -557,8 +558,7 @@ def verify_analysis(
     """
     profile = profile or GENERAL_PROFILE
     if audit and not profile.audit:
-        import dataclasses as _dc
-        profile = _dc.replace(profile, audit=True)
+        profile = dataclasses.replace(profile, audit=True)
 
     tracker = SharedCostTracker(max_spend=max_spend)
     try:
@@ -618,8 +618,7 @@ async def averify_analysis(
     """
     profile = profile or GENERAL_PROFILE
     if audit and not profile.audit:
-        import dataclasses as _dc
-        profile = _dc.replace(profile, audit=True)
+        profile = dataclasses.replace(profile, audit=True)
 
     tracker = SharedCostTracker(max_spend=max_spend)
     try:
@@ -678,8 +677,7 @@ def verify_answer(
 
     profile = profile or GENERAL_PROFILE
     if audit and not profile.audit:
-        import dataclasses as _dc
-        profile = _dc.replace(profile, audit=True)
+        profile = dataclasses.replace(profile, audit=True)
 
     threshold = faithfulness_threshold if faithfulness_threshold is not None else profile.faithfulness_threshold
 
@@ -874,8 +872,7 @@ def verify_clause(
     from groundguard.profiles import STRICT_PROFILE
     profile = profile or STRICT_PROFILE
     if audit and not profile.audit:
-        import dataclasses as _dc
-        profile = _dc.replace(profile, audit=True)
+        profile = dataclasses.replace(profile, audit=True)
     unit = decompose_clause(clause_text)
     context_parts = [
         f"Clause modifiers: {unit.subordinate_modifiers}",
@@ -931,8 +928,7 @@ async def averify_clause(
     from groundguard.profiles import STRICT_PROFILE
     profile = profile or STRICT_PROFILE
     if audit and not profile.audit:
-        import dataclasses as _dc
-        profile = _dc.replace(profile, audit=True)
+        profile = dataclasses.replace(profile, audit=True)
     unit = decompose_clause(clause_text)
     context_parts = [
         f"Clause modifiers: {unit.subordinate_modifiers}",

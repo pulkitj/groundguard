@@ -51,7 +51,7 @@ sources = [
 
 # Generated answer you want to verify
 result = verify_answer(
-    output="Q3 revenue came in at $5 million, roughly flat year-over-year.",
+    answer="Q3 revenue came in at $5 million, roughly flat year-over-year.",
     sources=sources,
     model="gpt-4o-mini",
 )
@@ -111,14 +111,27 @@ from groundguard import verify, averify, verify_answer, averify_answer
 
 # Synchronous
 result = verify_answer(
-    output="The acquisition closed in Q2 and the FTC approved it unconditionally.",
+    answer="The acquisition closed in Q2 and the FTC approved it unconditionally.",
     sources=retrieved_docs,
     model="gpt-4o-mini",
 )
 
 # Async
-result = await averify_answer(output=..., sources=..., model="gpt-4o-mini")
+result = await averify_answer(answer=..., sources=..., model="gpt-4o-mini")
 ```
+
+**Task context** — pass an optional `context` string to improve accuracy on domain-specific claims:
+
+```python
+result = verify_answer(
+    answer="The acquisition closed in Q2.",
+    sources=retrieved_docs,
+    model="gpt-4o-mini",
+    context="M&A compliance verification for SEC filings.",
+)
+```
+
+The `context` string is prepended to the Tier 3 prompt. It does not alter routing or scoring thresholds — it gives the verifying LLM situational framing when claims use domain-specific terminology.
 
 ### Verify a multi-claim analysis
 
@@ -172,6 +185,16 @@ results = averify_batch(inputs=inputs, model="gpt-4o-mini", max_concurrency=5, m
 
 Fail-contained: one item failing does not abort the batch. Items that exceed the spend cap return `status="SKIPPED_DUE_TO_COST"`.
 
+Per-item `auto_chunk` override — set `ClaimInput.auto_chunk` to override the batch default for a single item. `None` (default) inherits the batch-level value:
+
+```python
+inputs = [
+    ClaimInput(claim="Claim A", sources=[...]),                    # inherits batch default
+    ClaimInput(claim="Claim B", sources=[...], auto_chunk=False),  # full-source for this item only
+]
+results = averify_batch(inputs=inputs, model="gpt-4o-mini", auto_chunk=True)
+```
+
 ---
 
 ## What it returns
@@ -218,6 +241,14 @@ MY_PROFILE = VerificationProfile(
     majority_vote=True,
     audit=True,
 )
+```
+
+**Enable audit trail without a custom profile** — pass `audit=True` directly to any entry point:
+
+```python
+result = verify_answer(answer=..., sources=..., model="gpt-4o-mini", audit=True)
+# Each AtomicClaimResult carries an audit_record with the model name, raw LLM response,
+# and per-atom confidence score — no custom profile required.
 ```
 
 ---

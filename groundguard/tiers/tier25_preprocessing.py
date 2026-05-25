@@ -263,7 +263,6 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
     if not conflict_found:
         if not is_range_claim and claim_floats:
             if all(cf in matched_floats for cf in claim_floats):
-                conflict_found = False
                 conflict_citation = None
             else:
                 if conflict_citation is not None:

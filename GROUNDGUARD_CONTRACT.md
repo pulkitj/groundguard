@@ -45,6 +45,12 @@ Applies to all six entry points: `verify`, `averify`, `verify_answer`, `averify_
 
 Note: `verify_answer` uses `evaluate_faithfulness` (not the Tier 2/3 pipeline); the `auto_chunk=False` effect is identical — sources are wrapped one-per-chunk without BM25 sliding-window splitting.
 
+**`context`** — optional `str`, default `None`. Injected as a task-context prefix into the Tier 3 prompt before the claim boundary. Useful for domain-specific terminology or situational framing. Does not affect routing decisions, BM25 scoring, or faithfulness thresholds.
+
+**`audit`** — bool shorthand, default `False`. Equivalent to `dataclasses.replace(profile, audit=True)`. Can be passed directly to any entry point without defining a custom profile. When `True`, each `AtomicClaimResult` carries a `VerificationAuditRecord` containing the model name, raw LLM response, and per-atom confidence score.
+
+**`chunk_size` / `chunk_overlap` / `max_source_tokens`** — configure the sliding-window chunker. Defaults: `chunk_size=400` tokens, `chunk_overlap=50` tokens, `max_source_tokens=1200` tokens. Active only when `auto_chunk=True`; ignored when `auto_chunk=False`.
+
 ---
 
 ## 3. Invariants Under Composition
@@ -68,6 +74,15 @@ When a `TermRegistry` is provided to `verify_clause`, term definitions are injec
 
 **`averify_batch` failure isolation**
 `averify_batch` is fail-contained per item. An exception in one item (including `VerificationCostExceededError`) does not abort the batch. Items that hit the spend cap return `status="SKIPPED_DUE_TO_COST"`. All other per-item exceptions return `status="ERROR"`. The shared `SharedCostTracker` applies across the entire batch.
+
+**Per-item `ClaimInput.auto_chunk`**
+`ClaimInput.auto_chunk` is a ternary field: `None` (default) inherits the batch-level `auto_chunk` value; `True` or `False` overrides for that item regardless of the batch default. This allows mixing large-context and standard BM25-chunked processing in a single `averify_batch` call without splitting into separate batches.
+
+**`cost_tracker` on batch and analysis functions**
+`averify_batch` and `verify_analysis` / `averify_analysis` accept an optional `cost_tracker: SharedCostTracker`. When provided, spend from the operation accumulates in the caller-supplied tracker, enabling a single spend budget enforced across multiple sequential calls. When `None` (default), a fresh tracker scoped to that call is created internally.
+
+**Tier 1 chunk pinning**
+When Tier 1's fuzzy match fires on a claimed evidence string, the matching chunk is appended to Tier 2's `top_k_chunks` before Tier 3 runs — unless the chunk is already present in the top-k set (deduplication by `chunk_id` and content prefix). This guarantees the evidence that triggered the Tier 1 gate is always visible to Tier 3, regardless of its BM25 rank.
 
 **Parameter precedence**
 `explicit call params > ctx.majority_vote_on_borderline > profile defaults`. This precedence is enforced in `VerificationContext.__post_init__` and cannot be overridden by downstream tiers.
