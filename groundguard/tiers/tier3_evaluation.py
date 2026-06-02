@@ -191,7 +191,8 @@ def evaluate(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3ResponseMode
             try:
                 cost = litellm.completion_cost(completion_response=response)
             except Exception:
-                cost = 0.0  # unknown model — no pricing data in litellm registry
+                cost = 0.0
+                logger.debug("completion_cost lookup failed for model %r — cost recorded as $0.00", ctx.model)
             ctx.cost_tracker.add_cost(cost)
             return parse_response(response, ctx.model)
         except (pydantic.ValidationError, ValueError, IndexError) as e:
@@ -349,6 +350,12 @@ def evaluate_faithfulness(
         messages=[{"role": "user", "content": prompt}],
         response_format=FaithfulnessResponseModel,
     )
+    try:
+        call_cost = litellm.completion_cost(completion_response=response)
+    except Exception:
+        call_cost = 0.0
+        logger.debug("completion_cost lookup failed for model %r — cost recorded as $0.00", ctx.model)
+    ctx.cost_tracker.add_cost(call_cost)
 
     content = response.choices[0].message.content
     faithfulness = FaithfulnessResponseModel.model_validate_json(content)
@@ -402,6 +409,7 @@ def evaluate_faithfulness(
         total_units=len(units),
         grounded_units=entailment_count,
         ungrounded_units=contradiction_count,
+        total_cost_usd=ctx.cost_tracker.total_cost_usd,
         unit_results=units,
         audit_records=audit_records,
     )

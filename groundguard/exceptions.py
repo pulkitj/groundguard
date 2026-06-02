@@ -49,7 +49,15 @@ class ParseError(Exception):
 
 
 class InvariantError(Exception):
-    """Raised when a citation invariant is violated."""
+    """Raised when a citation invariant is violated.
 
-    def __init__(self, message: str) -> None:
+    Attributes:
+        cost_usd: LLM spend incurred before the invariant was detected.
+                  Populated by verify()/averify() before re-raising.
+    """
+
+    cost_usd: float
+
+    def __init__(self, message: str, cost_usd: float = 0.0) -> None:
         super().__init__(message)
+        self.cost_usd = cost_usd

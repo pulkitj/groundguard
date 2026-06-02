@@ -24,9 +24,13 @@ def assert_grounded(analysis: str, sources: list[Source], **kwargs) -> None:
 
 
 def verify_or_retry(generator, sources: list[Source], max_retries: int = 3, **kwargs) -> str:
+    from groundguard.exceptions import InvariantError
     for attempt in range(max_retries):
         output = generator()
-        result = verify_answer(output, sources, **kwargs)
+        try:
+            result = verify_answer(output, sources, **kwargs)
+        except InvariantError:
+            raise
         if result.is_grounded:
             return output
     raise GroundingError(f"Output not grounded after {max_retries} attempts")

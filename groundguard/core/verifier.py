@@ -10,6 +10,7 @@ import pydantic
 from groundguard._log import logger
 from groundguard.core import classifier
 from groundguard.exceptions import (
+    InvariantError,
     ParseError,
     VerificationCostExceededError,
     VerificationFailedError,
@@ -47,7 +48,15 @@ def verify(
     profile: VerificationProfile | None = None,
     context: str | None = None,
 ) -> VerificationResult:
-    """Synchronous verification entry point."""
+    """Synchronous verification entry point.
+    
+    Raises:
+        InvariantError: verification pipeline produced an internally inconsistent result
+                        (e.g. VERIFIED claim with no citation). The claim cannot be trusted.
+                        Caller should treat this as unverified and decide whether to retry.
+        VerificationCostExceededError: max_spend cap hit
+        ParseError: returned as status="PARSE_ERROR" in the result, not raised
+    """
     if not claim or not isinstance(claim, str):
         raise ValueError("claim must be a non-empty string")
     if not sources:
@@ -184,7 +193,11 @@ def verify(
     except TRANSIENT_LITELLM_ERRORS as e:
         raise VerificationFailedError(f"Upstream LLM transient failure: {type(e).__name__}.")
 
-    result = ResultBuilder.build_llm_result(ctx, t3_model, "tier3_llm")
+    try:
+        result = ResultBuilder.build_llm_result(ctx, t3_model, "tier3_llm")
+    except InvariantError as e:
+        e.cost_usd = ctx.cost_tracker.total_cost_usd
+        raise
     logger.info(
         "verify() completion [boundary=%s]",
         ctx._boundary_id,
@@ -215,7 +228,15 @@ async def averify(
     profile: VerificationProfile | None = None,
     context: str | None = None,
 ) -> VerificationResult:
-    """Asynchronous verification entry point."""
+    """Asynchronous verification entry point.
+    
+    Raises:
+        InvariantError: verification pipeline produced an internally inconsistent result
+                        (e.g. VERIFIED claim with no citation). The claim cannot be trusted.
+                        Caller should treat this as unverified and decide whether to retry.
+        VerificationCostExceededError: max_spend cap hit
+        ParseError: returned as status="PARSE_ERROR" in the result, not raised
+    """
     if not claim or not isinstance(claim, str):
         raise ValueError("claim must be a non-empty string")
     if not sources:
@@ -330,7 +351,11 @@ async def averify(
     except TRANSIENT_LITELLM_ERRORS as e:
         raise VerificationFailedError(f"Upstream LLM transient failure: {type(e).__name__}.")
 
-    result = ResultBuilder.build_llm_result(ctx, t3_model, "tier3_llm")
+    try:
+        result = ResultBuilder.build_llm_result(ctx, t3_model, "tier3_llm")
+    except InvariantError as e:
+        e.cost_usd = ctx.cost_tracker.total_cost_usd
+        raise
     logger.info(
         "averify(): status=%s method=%s cost=$%.4f [boundary=%s]",
         result.status,
@@ -402,6 +427,22 @@ async def averify_batch(
                 offending_claim=None,
                 status="SKIPPED_DUE_TO_COST",
                 total_cost_usd=0.0,  # item was not billed; incremental cost is zero
+            ))
+        elif isinstance(r, InvariantError):
+            logger.error(
+                "averify_batch: item failed with InvariantError — returning INVARIANT_ERROR result"
+            )
+            results.append(VerificationResult(
+                is_valid=False,
+                overall_verdict="Verification failed — internal integrity violation.",
+                verification_method="skipped",
+                atomic_claims=[],
+                factual_consistency_score=0.0,
+                sources_used=[],
+                rationale=str(r),
+                offending_claim=None,
+                status="INVARIANT_ERROR",
+                total_cost_usd=r.cost_usd,
             ))
         elif isinstance(r, Exception):
             logger.error(
@@ -551,6 +592,14 @@ def verify_analysis(
 ) -> GroundingResult:
     """Verify that analysis_text is grounded in sources by extracting and checking each claim.
 
+    InvariantError from per-claim verification is absorbed into the GroundingResult
+    (affected item returns status="INVARIANT_ERROR") rather than propagating to the caller.
+
+    Raises:
+        VerificationCostExceededError: max_spend cap hit
+        ParseError: from claim_extractor — returned as status="ERROR" GroundingResult, not raised
+
+
     auto_chunk: Pass False when using large-context models (Gemini 1.5 Pro, Claude 3.5+) to
         send each source as a single unit without BM25 sliding-window chunking. Avoids the
         Lost Context Problem where low-scoring chunks containing negating context are dropped.
@@ -611,6 +660,14 @@ async def averify_analysis(
 ) -> GroundingResult:
     """Pure-async implementation: no thread pool, no secondary event loop.
 
+    InvariantError from per-claim verification is absorbed into the GroundingResult
+    (affected item returns status="INVARIANT_ERROR") rather than propagating to the caller.
+
+    Raises:
+        VerificationCostExceededError: max_spend cap hit
+        ParseError: from claim_extractor — returned as status="ERROR" GroundingResult, not raised
+
+
     auto_chunk: Pass False when using large-context models (Gemini 1.5 Pro, Claude 3.5+) to
         send each source as a single unit without BM25 sliding-window chunking. Avoids the
         Lost Context Problem where low-scoring chunks containing negating context are dropped.
@@ -667,6 +724,11 @@ def verify_answer(
     tier1_min_similarity: float = 0.90,
 ) -> GroundingResult:
     """Verify that an answer is grounded in the provided sources.
+
+    Raises:
+        VerificationCostExceededError: max_spend cap hit
+        ParseError: returned as status="PARSE_ERROR" in the result, not raised
+
 
     auto_chunk: Pass False when using large-context models (Gemini 1.5 Pro, Claude 3.5+) to
         send each source as a single unit without BM25 sliding-window chunking. Avoids the
@@ -742,6 +804,7 @@ def verify_answer(
                 status="NOT_GROUNDED",
                 evaluation_method="sentence_entailment",
                 audit_records=audit_records,
+                total_cost_usd=ctx.cost_tracker.total_cost_usd,
             )
             logger.info(
                 "verify_answer() completion [boundary=%s]",
@@ -756,6 +819,7 @@ def verify_answer(
             status=winner,
             evaluation_method="sentence_entailment",
             audit_records=audit_records,
+            total_cost_usd=ctx.cost_tracker.total_cost_usd,
         )
         logger.info(
             "verify_answer() completion [boundary=%s]",
@@ -771,6 +835,7 @@ def verify_answer(
         status=result.status if not is_grounded else "GROUNDED",
         evaluation_method=result.evaluation_method,
         audit_records=audit_records,
+        total_cost_usd=ctx.cost_tracker.total_cost_usd,
     )
     logger.info(
         "verify_answer() completion [boundary=%s]",
@@ -798,6 +863,11 @@ async def averify_answer(
     tier1_min_similarity: float = 0.90,
 ) -> GroundingResult:
     """Async version of verify_answer.
+
+    Raises:
+        VerificationCostExceededError: max_spend cap hit
+        ParseError: returned as status="PARSE_ERROR" in the result, not raised
+
 
     auto_chunk: Pass False when using large-context models (Gemini 1.5 Pro, Claude 3.5+) to
         send each source as a single unit without BM25 sliding-window chunking. Avoids the
@@ -834,6 +904,13 @@ def verify_structured(
     """
     Validates claim_dict against the provided Pydantic schema, flattens it to a
     string, then delegates to verify(). Raises ValueError on schema mismatch.
+    
+    Raises:
+        InvariantError: verification pipeline produced an internally inconsistent result
+                        (e.g. VERIFIED claim with no citation). The claim cannot be trusted.
+                        Caller should treat this as unverified and decide whether to retry.
+        VerificationCostExceededError: max_spend cap hit
+        ParseError: returned as status="PARSE_ERROR" in the result, not raised
     """
     try:
         validated = schema.model_validate(claim_dict)
@@ -862,6 +939,14 @@ def verify_clause(
     audit: bool = False,
 ):
     """Decompose and verify a legal clause against source documents.
+    
+    Raises:
+        InvariantError: verification pipeline produced an internally inconsistent result
+                        (e.g. VERIFIED claim with no citation). The claim cannot be trusted.
+                        Caller should treat this as unverified and decide whether to retry.
+        VerificationCostExceededError: max_spend cap hit
+        ParseError: returned as status="PARSE_ERROR" in the result, not raised
+
 
     auto_chunk: Pass False when using large-context models (Gemini 1.5 Pro, Claude 3.5+) to
         send each source as a single unit without BM25 sliding-window chunking. Avoids the
@@ -918,6 +1003,14 @@ async def averify_clause(
     audit: bool = False,
 ):
     """Async version of verify_clause.
+    
+    Raises:
+        InvariantError: verification pipeline produced an internally inconsistent result
+                        (e.g. VERIFIED claim with no citation). The claim cannot be trusted.
+                        Caller should treat this as unverified and decide whether to retry.
+        VerificationCostExceededError: max_spend cap hit
+        ParseError: returned as status="PARSE_ERROR" in the result, not raised
+
 
     auto_chunk: Pass False when using large-context models (Gemini 1.5 Pro, Claude 3.5+) to
         send each source as a single unit without BM25 sliding-window chunking. Avoids the

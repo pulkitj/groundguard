@@ -132,6 +132,7 @@ class ResultBuilder:
                 claim_text=v.claim_text,
                 claim_type=claim_type,
                 status=v.status,
+                verification_method=method,
                 source_id=v.source_id,
                 source_excerpt=v.source_excerpt,
                 reasoning_basis=v.reasoning_basis,

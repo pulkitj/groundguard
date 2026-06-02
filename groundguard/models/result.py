@@ -93,6 +93,7 @@ class VerificationResult:
         "SKIPPED_DUE_TO_COST",
         "PARSE_ERROR",
         "ERROR",
+        "INVARIANT_ERROR",
     ]
     total_cost_usd: float
 
