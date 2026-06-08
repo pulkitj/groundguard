@@ -657,3 +657,22 @@ def test_verify_does_not_duplicate_pinned_chunk(mocker):
     assert len(called_chunks) == 1
     assert called_chunks[0] == sentinel_chunk
 
+
+def test_tier25_fast_exit_sources_used_points_to_conflicting_source():
+    """BF-1: sources_used in Tier 2.5 fast exit must reflect the source that contains
+    the conflicting number, not unconditionally use original_sources[0]."""
+    from groundguard.core.verifier import verify
+    from groundguard.models.result import Source
+
+    src1 = Source(source_id="legal.pdf", content="Terms and conditions of the agreement.")
+    src2 = Source(source_id="financials.pdf", content="Revenue was $5 million.")
+    # claim says $500 million; conflict is in src2 (financials.pdf), not src1 (legal.pdf)
+    result = verify("Revenue was $500 million.", [src1, src2])
+
+    assert result.status == "CONTRADICTED"
+    assert result.verification_method == "tier25_numerical"
+    assert "financials.pdf" in result.sources_used, (
+        f"sources_used must point to financials.pdf (the conflicting source), got {result.sources_used}"
+    )
+    assert "legal.pdf" not in result.sources_used
+

@@ -230,6 +230,8 @@ Chunker (loaders/chunker.py):    Chunk  ← defined here, not in models/
 
 **Exception contract** — `verify()` / `averify()` are fail-loud (all exceptions propagate except `ParseError` → returned as `status="PARSE_ERROR"`). `verify_batch_async()` is fail-contained (all exceptions absorbed per item). This asymmetry is intentional — see `plan/engineering_design_update.md` §8.
 
+**`verify_answer` first param is `answer`** — the keyword argument is `answer: str`, not `output`. The README used `output=` until commit `8905a49`, causing a `TypeError` if copied literally. Do not reintroduce `output=` in docs or examples.
+
 ---
 
 ## Test Structure
