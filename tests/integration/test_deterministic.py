@@ -276,20 +276,21 @@ def test_fatal_contradiction_overrides_score_threshold(mocker):
 # Behavioural edge-case 2 — Citation invariant enforced through the pipeline
 # ---------------------------------------------------------------------------
 
-def test_verify_raises_invariant_error_for_extractive_without_excerpt(
+def test_verify_downgrades_extractive_without_excerpt_to_unverifiable(
     mock_llm_no_excerpt, bypass_tier2
 ):
-    """VERIFIED extractive claim with no source_excerpt must raise InvariantError
+    """VERIFIED extractive claim with no source_excerpt must be downgraded to UNVERIFIABLE
     from within the full verify() pipeline.
 
     The LLM returns Entailment / VERIFIED but omits source_excerpt.  ResultBuilder
-    must detect this and raise before producing a VerificationResult, since a
+    must detect this and downgrade it before producing a VerificationResult, since a
     grounded extractive claim without an evidence excerpt is unprovable.
     """
-    from groundguard.exceptions import InvariantError
     src = Source(source_id="s1", content="Revenue grew.")
-    with pytest.raises(InvariantError, match="VERIFIED extractive claim has no citation"):
-        verify("Revenue grew.", [src])
+    result = verify("Revenue grew.", [src])
+    assert result.status == "UNVERIFIABLE"
+    assert result.is_valid is False
+    assert result.atomic_claims[0].status == "UNVERIFIABLE"
 
 
 def test_verify_does_not_raise_for_inferential_without_excerpt(
@@ -461,8 +462,8 @@ def test_branch_c_cap_uses_actual_profile_top_k():
     """
     from groundguard.profiles import GENERAL_PROFILE, STRICT_PROFILE, RESEARCH_PROFILE
 
-    assert GENERAL_PROFILE.bm25_top_k * 3 == 9, "GENERAL cap must be 9"
-    assert STRICT_PROFILE.bm25_top_k * 3 == 18, "STRICT cap must be 18"
+    assert GENERAL_PROFILE.bm25_top_k * 3 == 18, "GENERAL cap must be 18"
+    assert STRICT_PROFILE.bm25_top_k * 3 == 24, "STRICT cap must be 24"
     assert RESEARCH_PROFILE.bm25_top_k * 3 == 12, "RESEARCH cap must be 12"
 
     # No profile should have bm25_top_k==5 (the old assumption)

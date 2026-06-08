@@ -219,13 +219,13 @@ Every `VERIFIED` result carries a `citation` with the exact excerpt and characte
 ```python
 from groundguard import verify_answer, STRICT_PROFILE, GENERAL_PROFILE, RESEARCH_PROFILE
 
-result = verify_answer(output, sources, profile=STRICT_PROFILE, model="gpt-4o-mini")
+result = verify_answer(answer=output, sources=sources, profile=STRICT_PROFILE, model="gpt-4o-mini")
 ```
 
 | Profile | Threshold | Majority vote | Audit trail | BM25 top-k |
 | --- | --- | --- | --- | --- |
-| `STRICT_PROFILE` | 0.97 | Yes (3 calls) | Full | 6 |
-| `GENERAL_PROFILE` | 0.80 | No | Off | 3 |
+| `STRICT_PROFILE` | 0.97 | Yes (3 calls) | Full | 8 |
+| `GENERAL_PROFILE` | 0.80 | No | Off | 6 |
 | `RESEARCH_PROFILE` | 0.70 | No | Off | 4 |
 
 Custom profiles are a frozen dataclass:

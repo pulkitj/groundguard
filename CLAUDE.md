@@ -232,13 +232,20 @@ Chunker (loaders/chunker.py):    Chunk  ← defined here, not in models/
 
 **`verify_answer` first param is `answer`** — the keyword argument is `answer: str`, not `output`. The README used `output=` until commit `8905a49`, causing a `TypeError` if copied literally. Do not reintroduce `output=` in docs or examples.
 
+**`InvariantError`** — `InvariantError` is now only raised by `core/result_builder.py` (Phase 23 path). `models/builder.py` downgrades silently. The verifier still re-raises it from the Phase 23 path.
+
+**Tier 2.5 fast exit `sources_used`** — `sources_used` now reflects the citation `source_id` (or `[]` if citation is absent), not unconditionally `original_sources[0]`.
+
+**Verification Profiles** — `GENERAL_PROFILE` uses `bm25_top_k=6` and `STRICT_PROFILE` uses `bm25_top_k=8`.
+
 ---
 
 ## Test Structure
 
 ```text
 tests/
-├── test_exceptions.py      # Phase 1
+├── test_exceptions.py      # Phase 1 + Task 7 (pipeline errors)
+├── test_verifier.py        # Task 6/7 integration tests
 ├── test_log.py             # Phase 1
 ├── test_models.py          # Phase 2 — TDD #15 (VerificationContext defaults) + Phase 21 (profile fields)
 ├── test_classifier.py      # Phase 3 — decimal-safe split, inferential signals

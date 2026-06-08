@@ -23,6 +23,9 @@ When majority vote is active (triggered by a profile with `majority_vote=True` a
 **Tie-break conservatism**
 A 1-1-1 split across 3 majority vote calls always yields `is_grounded=False` and `status="NOT_GROUNDED"`. Ties are never silently promoted to a positive verdict.
 
+**Tier 2.5 Determinism**
+Numerical conflicts (mismatched percentages, dollar amounts, years) are detected deterministically before any LLM call and returned as `status="CONTRADICTED"` with `total_cost_usd=0.0`.
+
 ---
 
 ## 2. Configurables
@@ -56,6 +59,9 @@ Note: `verify_answer` uses `evaluate_faithfulness` (not the Tier 2/3 pipeline); 
 ## 3. Invariants Under Composition
 
 These invariants hold when combining multiple groundguard APIs in a single workflow.
+
+**Result Validation Consistency**
+A `VERIFIED` result always has `is_valid=True`. An `UNVERIFIABLE` or `CONTRADICTED` result always has `is_valid=False`. These are never inconsistent.
 
 **`SourceAccumulator` is opt-in**
 `SourceAccumulator` is not wired into the pipeline. No verification function accepts a `SourceAccumulator` directly — callers always call `.sources()` explicitly and pass the resulting `list[Source]`:
@@ -104,3 +110,6 @@ The numerical conflict detector (`tier25_preprocessing`) uses regex patterns cal
 
 **BM25 on single-sentence sources**
 BM25Okapi can return negative scores on very small corpora due to IDF artefacts. On single-sentence sources, routing may fall through to Branch B (`ESCALATE_TO_LLM`) even when Branch C (`ESCALATE_ALL_LOW_SCORE`) would be more appropriate. Use `auto_chunk=False` on very short sources to avoid this edge case.
+
+**Context Window Exceedance with auto_chunk=False**
+`auto_chunk=False` with a source exceeding the model's context window produces `status="PARSE_ERROR"` — not a crash — but the cost of the failed call is still billed.
