@@ -444,3 +444,36 @@ def test_render_prompt_includes_context_when_set():
     p2 = render_prompt(ctx_no_context, [])
     assert "Task context:" not in p2
 
+
+def test_prompt_contains_strict_entailment_rule():
+    """Prompt must contain a strict per-assertion rule for Entailment verdicts."""
+    ctx = _make_ctx()
+    chunks = _make_chunks()
+    prompt = render_prompt(ctx, chunks)
+    assert "every" in prompt.lower() and "assertion" in prompt.lower(), (
+        "Prompt must state that EVERY assertion must be supported for Entailment"
+    )
+
+
+def test_prompt_requires_source_excerpt_for_verified():
+    """Prompt must make source_excerpt mandatory (not merely suggested) for VERIFIED extractive."""
+    ctx = _make_ctx()
+    chunks = _make_chunks()
+    prompt = render_prompt(ctx, chunks)
+    lower = prompt.lower()
+    assert ("required" in lower or "must provide" in lower or "mandatory" in lower), (
+        "Prompt must use a mandatory marker (required/must/mandatory) for source_excerpt on VERIFIED"
+    )
+
+
+def test_prompt_contains_partial_hallucination_guidance():
+    """Prompt must explicitly address partial hallucinations — one unsupported detail ≠ Entailment."""
+    ctx = _make_ctx()
+    chunks = _make_chunks()
+    prompt = render_prompt(ctx, chunks)
+    lower = prompt.lower()
+    assert "partial" in lower or "single" in lower or "any detail" in lower or "one detail" in lower, (
+        "Prompt must address partial support / single-detail fabrication"
+    )
+
+
