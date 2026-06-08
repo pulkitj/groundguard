@@ -676,3 +676,57 @@ def test_tier25_fast_exit_sources_used_points_to_conflicting_source():
     )
     assert "legal.pdf" not in result.sources_used
 
+
+# P-2 amendment — strengthen existing test with cost assertion
+def test_verify_tier25_cost_is_zero_on_fast_exit():
+    """P-2: Tier 2.5 exits before any LLM call — total_cost_usd must be 0.0."""
+    from groundguard.core.verifier import verify
+    from groundguard.models.result import Source
+    src = Source(source_id="s1", content="The fee shall not exceed 30% of revenue.")
+    result = verify("The fee shall not exceed 300% of revenue.", [src], model="gpt-4o-mini")
+    assert result.status == "CONTRADICTED"
+    assert result.verification_method == "tier25_numerical"
+    assert result.total_cost_usd == 0.0
+
+
+# P-1 — averify() async path also exits via Tier 2.5
+import pytest
+@pytest.mark.asyncio
+async def test_averify_tier25_numerical_fast_exit():
+    """P-1: averify() must also take the Tier 2.5 fast exit — no LLM call, zero cost."""
+    import asyncio
+    from groundguard.core.verifier import averify
+    from groundguard.models.result import Source
+    src = Source(source_id="s1", content="The fee shall not exceed 30% of revenue.")
+    result = await averify(
+        "The fee shall not exceed 300% of revenue.", [src], model="gpt-4o-mini"
+    )
+    assert result.status == "CONTRADICTED"
+    assert result.verification_method == "tier25_numerical"
+    assert result.total_cost_usd == 0.0
+
+
+# P-3 — year conflict triggers Tier 2.5 fast exit through the full verify() pipeline
+def test_verify_year_conflict_triggers_tier25_fast_exit():
+    """P-3: A year conflict must trigger the fast exit and return early."""
+    from groundguard.core.verifier import verify
+    from groundguard.models.result import Source
+    src = Source(source_id="s1", content="The product launched in 2023.")
+    result = verify("The product launched in 2024.", [src], model="gpt-4o-mini")
+    assert result.status == "CONTRADICTED"
+    assert result.verification_method == "tier25_numerical"
+    assert result.total_cost_usd == 0.0
+
+
+# P-4 — Tier 1 is skipped when Tier 2.5 fast exits
+def test_verify_tier25_fast_exit_skips_tier1(mocker):
+    """P-4: If Tier 2.5 triggers a fast exit, Tier 1 check_fuzzy must not be called."""
+    from groundguard.core.verifier import verify
+    from groundguard.models.result import Source
+    
+    mock_tier1 = mocker.patch("groundguard.tiers.tier1_authenticity.check_fuzzy")
+    
+    src = Source(source_id="s1", content="The fee is 30%.")
+    verify("The fee is 300%.", [src], model="gpt-4o-mini")
+    
+    mock_tier1.assert_not_called()
