@@ -15,7 +15,7 @@ STRICT_PROFILE = VerificationProfile(
     name="strict",
     faithfulness_threshold=0.97,
     tier2_lexical_threshold=2.0,
-    bm25_top_k=6,
+    bm25_top_k=8,
     majority_vote=True,
     audit=True,
 )
@@ -24,7 +24,7 @@ GENERAL_PROFILE = VerificationProfile(
     name="general",
     faithfulness_threshold=0.80,
     tier2_lexical_threshold=0.85,
-    bm25_top_k=3,
+    bm25_top_k=6,
     majority_vote=False,
     audit=False,
 )
