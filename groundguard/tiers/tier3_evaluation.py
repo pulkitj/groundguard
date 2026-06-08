@@ -49,6 +49,13 @@ Generate a JSON object with a five-part analysis:
    Across ALL sources combined, determine if the evidence [Entails, Contradicts, or is
    Neutral to] the overall claim. Provide a label and probability (0.0-1.0).
 
+   STRICT RULE — use "Entailment" ONLY when every single factual assertion in the claim
+   is supported by the sources, either verbatim or through clear semantic equivalence
+   (paraphrasing and synonyms are acceptable). Partial support is NOT Entailment.
+   If any specific named entity, numeric value, date, or categorical assertion is absent
+   from or contradicted by the sources, use "Neutral" or "Contradiction" respectively.
+   Do NOT round partial support up to "Entailment".
+
 2. Conceptual Coverage:
    Identify key concepts in the claim. List which are covered by the sources and which
    are missing. Calculate a coverage percentage.
@@ -59,7 +66,9 @@ Generate a JSON object with a five-part analysis:
    If claim_type is "Extractive":
    - Search all sources for a direct factual match.
    - Status: "VERIFIED", "CONTRADICTED", or "UNVERIFIABLE".
-   - If VERIFIED or CONTRADICTED: provide source_excerpt (direct quote) and source_id.
+   - REQUIRED: if status is "VERIFIED" or "CONTRADICTED", you MUST provide source_excerpt
+     (a verbatim direct quote from the source) and source_id. Omitting source_excerpt on
+     a VERIFIED result is an error — downgrade to "UNVERIFIABLE" if no direct quote exists.
 
    If claim_type is "Inferential":
    - Do NOT look for a direct quote. Instead, evaluate whether the inference is
