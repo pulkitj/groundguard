@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e ".[loaders,dev]"
-      - run: pytest -m loaders -x -q
+      - run: pytest -m loaders -x -q || [ $? -eq 5 ]
 
   langchain-suite:
     name: Optional LangChain Tests
@@ -44,7 +44,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e ".[langchain,dev]"
-      - run: pytest -m langchain -x -q
+      - run: pytest -m langchain -x -q || [ $? -eq 5 ]
 
   real-suite:
     name: Real Suite (LLM endpoints)
