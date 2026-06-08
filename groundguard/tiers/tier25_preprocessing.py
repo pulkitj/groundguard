@@ -182,6 +182,13 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                     excerpt_char_start=chunk.char_start + start,
                     excerpt_char_end=chunk.char_start + end,
                 )
+                return Tier25Result(
+                    has_conflict=True,
+                    verification_method="tier25_numerical",
+                    evidence_bundle=build_evidence_bundle(ctx, chunks),
+                    conflict_citation=year_conflict_citation,
+                    numerical_checks=[],
+                )
     else:
         # Loop completed without finding a supporting chunk
         if year_conflict_citation is not None:
@@ -250,7 +257,13 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                                 excerpt_char_start=chunk.char_start + start,
                                 excerpt_char_end=chunk.char_start + end,
                             )
-                    continue
+                    return Tier25Result(
+                        has_conflict=True,
+                        verification_method="tier25_numerical",
+                        evidence_bundle=evidence_bundle,
+                        conflict_citation=conflict_citation,
+                        numerical_checks=checks,
+                    )
                 elif chunk_floats and claim_float in chunk_floats:
                     matched_floats.add(claim_float)
                     checks.append(NumericalCheckResult(
