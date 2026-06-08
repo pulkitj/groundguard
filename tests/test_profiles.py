@@ -6,7 +6,7 @@ def test_strict_profile_fields():
     from groundguard.profiles import STRICT_PROFILE
     assert STRICT_PROFILE.faithfulness_threshold == 0.97
     assert STRICT_PROFILE.tier2_lexical_threshold == 2.0
-    assert STRICT_PROFILE.bm25_top_k == 6
+    assert STRICT_PROFILE.bm25_top_k == 8
     assert STRICT_PROFILE.majority_vote is True
     assert STRICT_PROFILE.audit is True
 
@@ -14,7 +14,7 @@ def test_general_profile_fields():
     from groundguard.profiles import GENERAL_PROFILE
     assert GENERAL_PROFILE.faithfulness_threshold == 0.80
     assert GENERAL_PROFILE.tier2_lexical_threshold == 0.85
-    assert GENERAL_PROFILE.bm25_top_k == 3
+    assert GENERAL_PROFILE.bm25_top_k == 6
     assert GENERAL_PROFILE.majority_vote is False
     assert GENERAL_PROFILE.audit is False
 
