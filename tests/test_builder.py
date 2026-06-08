@@ -83,6 +83,46 @@ def test_contradiction_maps_to_contradicted():
     assert result.is_valid is False
 
 
+def test_verified_extractive_missing_citation_downgrades_not_raises():
+    """LLM returns VERIFIED for extractive atom with no source_excerpt.
+    build_llm_result must NOT raise — atom status is downgraded to UNVERIFIABLE."""
+    from groundguard.models.tier3 import AtomicVerification
+    ctx = _make_ctx()
+    t3 = _make_t3_model(label="Entailment", verifications=[
+        AtomicVerification(
+            claim_text="Revenue was $5M.",
+            status="VERIFIED",
+            source_id="doc.pdf",
+            source_excerpt=None,   # missing — previously raised InvariantError
+            reasoning_basis=None,
+        )
+    ])
+    result = ResultBuilder.build_llm_result(ctx, t3, "tier3_llm")  # must not raise
+    assert result.atomic_claims[0].status == "UNVERIFIABLE"
+    # Overall result must also downgrade — returning VERIFIED with an UNVERIFIABLE atom is a broken API contract
+    assert result.status == "UNVERIFIABLE"
+    assert result.is_valid is False
+
+
+def test_inferential_missing_citation_is_not_downgraded():
+    """Inferential atoms never have source_excerpt — they must not be downgraded."""
+    from groundguard.models.tier3 import AtomicVerification
+    from groundguard.models.internal import ClassifiedAtom
+    ctx = _make_ctx()
+    ctx.tier0_atoms = [ClassifiedAtom(claim_text="Revenue was $5M.", claim_type="Inferential")]
+    t3 = _make_t3_model(label="Entailment", verifications=[
+        AtomicVerification(
+            claim_text="Revenue was $5M.",
+            status="VERIFIED",
+            source_id="doc.pdf",
+            source_excerpt=None,   # normal for inferential
+            reasoning_basis=["Revenue figure taken directly from source."],
+        )
+    ])
+    result = ResultBuilder.build_llm_result(ctx, t3, "tier3_llm")
+    assert result.atomic_claims[0].status == "VERIFIED"
+
+
 # TDD #16: build_lexical_pass
 def test_build_lexical_pass_deduplicates_sources():
     """TDD #16: sources_used is deduplicated (encounter order), factual_consistency_score==1.0."""
