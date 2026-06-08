@@ -133,9 +133,11 @@ class ResultBuilder:
                 page_hint=page_hints.get(v.source_id) if v.source_id else None,
             ))
 
-        # Re-derive overall status: if LLM said Entailment but any extractive atom was
-        # downgraded to UNVERIFIABLE (missing citation), the overall result cannot be VERIFIED.
-        if status == "VERIFIED" and any(a.status == "UNVERIFIABLE" for a in atomic_claims):
+        downgraded = any(
+            v.status == "VERIFIED" and a.status == "UNVERIFIABLE"
+            for v, a in zip(t3_model.verifications, atomic_claims)
+        )
+        if status == "VERIFIED" and downgraded:
             status = "UNVERIFIABLE"
             is_valid = False
 
