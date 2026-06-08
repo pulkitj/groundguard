@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
-from groundguard.exceptions import InvariantError
+from groundguard._log import logger
 from groundguard.models.result import VerificationResult, AtomicClaimResult
 
 if TYPE_CHECKING:
@@ -15,27 +15,23 @@ class ResultBuilder:
     """Builds VerificationResult from pipeline tier outputs."""
 
     @staticmethod
-    def _assert_citation_invariant(
+    def _safe_citation_status(
         status: str,
         citation: object,
         evaluation_method: str = "extractive",
-    ) -> None:
-        """Raise InvariantError if a VERIFIED extractive result has no citation.
+    ) -> str:
+        """Return a safe atom status — downgrades VERIFIED→UNVERIFIABLE when citation is absent.
 
-        Inferential claims are exempt: the LLM prompt instructs the model to
-        provide ``reasoning_basis`` instead of a direct-quote excerpt, so
-        ``citation`` will naturally be ``None`` for those claims.
-
-        Args:
-            status: Verdict status (e.g. "VERIFIED", "UNVERIFIABLE").
-            citation: The Citation object or None.
-            evaluation_method: Either "extractive" or "inferential".
+        Inferential claims are exempt: they use reasoning_basis instead of source_excerpt,
+        so citation=None is expected and correct for those.
         """
         if status == "VERIFIED" and citation is None and evaluation_method != "inferential":
-            raise InvariantError(
-                f"VERIFIED {evaluation_method} claim has no citation. "
-                "Every extractive VERIFIED result must include a source excerpt."
+            logger.warning(
+                "VERIFIED %s atom has no citation — downgrading to UNVERIFIABLE",
+                evaluation_method,
             )
+            return "UNVERIFIABLE"
+        return status
 
     @staticmethod
     def build_lexical_pass(
@@ -96,6 +92,7 @@ class ResultBuilder:
         - factual_consistency_score: divide by 100 (t3 is 0–100; public API is 0.0–1.0)
         - sources_used: only source_ids from ctx.original_sources (scrubs hallucinated IDs)
         - page_hint: transplanted from ctx.original_sources via source_id lookup
+        - VERIFIED extractive atom with no source_excerpt → downgraded to UNVERIFIABLE
         """
         label = t3_model.textual_entailment.label
         if label == "Entailment":
@@ -108,14 +105,11 @@ class ResultBuilder:
         is_valid = (status == "VERIFIED")
         norm_score = t3_model.factual_consistency_score / 100.0
 
-        # Build source_id → page_hint lookup from original sources
         page_hints: dict[str, str | None] = {
             s.source_id: s.page_hint for s in ctx.original_sources
         }
-        # Set of valid source IDs to scrub hallucinated ones
         valid_source_ids = {s.source_id for s in ctx.original_sources}
 
-        # Build claim_text -> claim_type lookup from Tier 0 classification
         atom_types: dict[str, str] = {
             a.claim_text: a.claim_type for a in ctx.tier0_atoms
         }
@@ -123,7 +117,7 @@ class ResultBuilder:
         atomic_claims = []
         for v in t3_model.verifications:
             claim_type = atom_types.get(v.claim_text, "Extractive")
-            ResultBuilder._assert_citation_invariant(
+            atom_status = ResultBuilder._safe_citation_status(
                 status=v.status,
                 citation=v.source_excerpt,
                 evaluation_method=claim_type.lower(),
@@ -131,7 +125,7 @@ class ResultBuilder:
             atomic_claims.append(AtomicClaimResult(
                 claim_text=v.claim_text,
                 claim_type=claim_type,
-                status=v.status,
+                status=atom_status,
                 verification_method=method,
                 source_id=v.source_id,
                 source_excerpt=v.source_excerpt,
@@ -139,11 +133,16 @@ class ResultBuilder:
                 page_hint=page_hints.get(v.source_id) if v.source_id else None,
             ))
 
+        # Re-derive overall status: if LLM said Entailment but any extractive atom was
+        # downgraded to UNVERIFIABLE (missing citation), the overall result cannot be VERIFIED.
+        if status == "VERIFIED" and any(a.status == "UNVERIFIABLE" for a in atomic_claims):
+            status = "UNVERIFIABLE"
+            is_valid = False
+
         offending_claim = next(
             (a.claim_text for a in atomic_claims if a.status == "CONTRADICTED"), None
         )
 
-        # Only include source_ids that actually exist in ctx.original_sources
         sources_used = [
             sa.source_id for sa in t3_model.source_attributions
             if sa.role != "Not Used" and sa.source_id in valid_source_ids
