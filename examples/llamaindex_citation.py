@@ -44,7 +44,7 @@ def build_verified_citation_engine(
         response = query_engine.query(question)
         answer = getattr(response, "response", str(response))
         sources = _sources_from_nodes(response)
-        verification = verify_analysis(answer, sources, model=groundguard_model)
+        verification = verify_analysis(answer, sources, context=question, model=groundguard_model)
         return {"answer": answer, "verification": verification, "sources": sources}
 
     return ask

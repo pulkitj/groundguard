@@ -11,7 +11,7 @@ import os
 import time
 from collections.abc import Callable
 
-from groundguard import verify
+from groundguard import verify_answer
 from groundguard.models.result import Source
 
 
@@ -68,7 +68,7 @@ def build_verified_assistant_thread(
             message for message in messages.data if getattr(message, "role", "") == "assistant"
         )
         answer = _message_text(final_message)
-        verification = verify(answer, ground_sources, model=groundguard_model)
+        verification = verify_answer(answer, ground_sources, context=user_message, model=groundguard_model)
         return {"answer": answer, "verification": verification, "sources": ground_sources}
 
     return ask

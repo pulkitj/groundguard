@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 
-from groundguard import verify
+from groundguard import verify_answer
 from groundguard.models.result import Source
 
 
@@ -39,7 +39,7 @@ def build_verified_cohere_rag(
     def ask(question: str):
         response = co_client.chat(message=question, documents=cohere_documents)
         answer = getattr(response, "text", "")
-        verification = verify(answer, sources, model=groundguard_model)
+        verification = verify_answer(answer, sources, context=question, model=groundguard_model)
         return {"answer": answer, "verification": verification, "sources": sources}
 
     return ask
