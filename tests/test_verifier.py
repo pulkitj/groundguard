@@ -690,7 +690,6 @@ def test_verify_tier25_cost_is_zero_on_fast_exit():
 
 
 # P-1 — averify() async path also exits via Tier 2.5
-import pytest
 @pytest.mark.asyncio
 async def test_averify_tier25_numerical_fast_exit():
     """P-1: averify() must also take the Tier 2.5 fast exit — no LLM call, zero cost."""
@@ -727,6 +726,65 @@ def test_verify_tier25_fast_exit_skips_tier1(mocker):
     mock_tier1 = mocker.patch("groundguard.tiers.tier1_authenticity.check_fuzzy")
     
     src = Source(source_id="s1", content="The fee is 30%.")
-    verify("The fee is 300%.", [src], model="gpt-4o-mini")
-    
+    result = verify(
+        "The fee is 300%.", [src],
+        model="gpt-4o-mini",
+        agent_provided_evidence="fee is 999%",
+    )
+    assert result.status == "CONTRADICTED"
+    assert result.verification_method == "tier25_numerical"
     mock_tier1.assert_not_called()
+
+
+# Task 7 gap 2: averify_batch wraps InvariantError as INVARIANT_ERROR status
+@pytest.mark.asyncio
+async def test_averify_batch_invariant_error_produces_invariant_error_status(mocker):
+    """c80fb59 gap 2: InvariantError from an averify_batch item produces status='INVARIANT_ERROR'."""
+    from groundguard.core.verifier import averify_batch
+    from groundguard.models.result import Source
+    from groundguard.exceptions import InvariantError
+    from groundguard.models.internal import ClaimInput
+
+    err = InvariantError("missing citation")
+    err.cost_usd = 0.0042
+
+    async def _raise(*args, **kwargs):
+        raise err
+
+    mocker.patch("groundguard.core.verifier.averify", side_effect=_raise)
+
+    src = Source(source_id="s1", content="Revenue was $5M.")
+    results = await averify_batch(
+        [ClaimInput(claim="Revenue was $5M.", sources=[src])],
+        model="gpt-4o-mini",
+    )
+    assert len(results) == 1
+    assert results[0].status == "INVARIANT_ERROR"
+    assert results[0].total_cost_usd == 0.0042
+
+
+# Task 7 gap 3: verify_answer propagates cost from cost_tracker
+def test_verify_answer_cost_usd_is_nonzero_after_llm_call(mocker):
+    """c80fb59 gap 3: verify_answer must propagate total_cost_usd from cost_tracker."""
+    from groundguard.core.verifier import verify_answer
+    from groundguard.models.result import Source, GroundingResult
+
+    def _fake_evaluate(ctx, chunks, **kwargs):
+        ctx.cost_tracker.add_cost(0.0015)
+        return GroundingResult(
+            is_grounded=True,
+            score=1.0,
+            status="GROUNDED",
+            evaluation_method="sentence_entailment",
+            total_cost_usd=ctx.cost_tracker.total_cost_usd,
+        )
+
+    mocker.patch(
+        "groundguard.core.verifier.tier3_evaluation.evaluate_faithfulness",
+        side_effect=_fake_evaluate,
+    )
+
+    src = Source(source_id="s1", content="Revenue was $5M.")
+    result = verify_answer(answer="Revenue was $5M.", sources=[src], model="gpt-4o-mini")
+    assert isinstance(result, GroundingResult)
+    assert result.total_cost_usd > 0.0

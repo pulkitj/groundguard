@@ -31,6 +31,13 @@ def test_parse_error_is_exception():
     assert "JSON" in str(exc)
 
 
+def test_invariant_error_has_cost_usd_field():
+    """c80fb59 gap 1: InvariantError must carry a cost_usd field, default 0.0."""
+    from groundguard.exceptions import InvariantError
+    err = InvariantError("test")
+    assert hasattr(err, "cost_usd")
+    assert err.cost_usd == 0.0
+
 
 def test_verify_handles_invariant_error_correctly(mocker):
     from groundguard.core.verifier import verify

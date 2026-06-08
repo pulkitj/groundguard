@@ -34,6 +34,14 @@ These parameters are caller-controlled. They change behaviour but do not affect 
 
 **`profile`** — a `VerificationProfile` dataclass (preset: `GENERAL_PROFILE`, `STRICT_PROFILE`, or `RESEARCH_PROFILE`). Sets defaults for `faithfulness_threshold`, `tier2_lexical_threshold`, `bm25_top_k`, `majority_vote`, and `audit`. Explicit per-call parameters always override profile defaults.
 
+| Profile | `faithfulness_threshold` | `tier2_lexical_threshold` | `bm25_top_k` | `majority_vote` | `audit` |
+| --- | --- | --- | --- | --- | --- |
+| `GENERAL_PROFILE` | 0.80 | 0.85 | **6** | No | Off |
+| `STRICT_PROFILE` | 0.97 | 2.0 | **8** | Yes (3 calls) | Full |
+| `RESEARCH_PROFILE` | 0.70 | 0.85 | **4** | No | Off |
+
+Branch C (`ESCALATE_ALL_LOW_SCORE`) cap is `bm25_top_k × 3`: GENERAL sends up to 18 chunks, STRICT up to 24, RESEARCH up to 12.
+
 **`faithfulness_threshold`** — float, 0.0–1.0. Minimum score for a result to be considered grounded. Explicit value beats `majority_vote_on_borderline` which beats the profile default (precedence enforced in `VerificationContext.__post_init__`).
 
 **`max_spend`** — soft USD cap. Default `float('inf')` (no cap). The triggering call is billed; subsequent calls in the batch or context are blocked with `status="SKIPPED_DUE_TO_COST"`.

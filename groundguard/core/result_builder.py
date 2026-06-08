@@ -15,9 +15,10 @@ class ResultBuilder:
     @staticmethod
     def build_numerical_fast_exit(claim: str, tier25: Tier25Result, source: Source) -> AtomicClaimResult:
         citation = tier25.conflict_citation
+        source_id = citation.source_id if citation else source.source_id
         result = AtomicClaimResult(
             claim_text=claim, claim_type="Extractive", status="CONTRADICTED",
-            source_id=source.source_id, verification_method="tier25_numerical", citation=citation,
+            source_id=source_id, verification_method="tier25_numerical", citation=citation,
         )
         ResultBuilder._assert_citation_invariant("CONTRADICTED", citation)
         return result

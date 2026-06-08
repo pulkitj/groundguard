@@ -55,7 +55,6 @@ def _make_mock_document(page_content: str, metadata: dict) -> MagicMock:
 # Test 1 — RetrievalQA chain: source_documents extracted and verify() called
 # ---------------------------------------------------------------------------
 
-@pytest.mark.langchain
 def test_on_chain_end_extracts_source_documents_as_source_objects(mocker):
     """T-32 #1a: Documents from outputs['source_documents'] are converted to Source objects."""
     mock_verify = mocker.patch(
@@ -87,7 +86,6 @@ def test_on_chain_end_extracts_source_documents_as_source_objects(mocker):
     assert sources_passed[0].content == "Revenue was $5M."
 
 
-@pytest.mark.langchain
 def test_on_chain_end_maps_document_metadata_source_to_source_id(mocker):
     """T-32 #1b: Document metadata['source'] becomes Source.source_id."""
     mock_verify = mocker.patch(
@@ -116,7 +114,6 @@ def test_on_chain_end_maps_document_metadata_source_to_source_id(mocker):
     assert sources_passed[0].source_id == "report.pdf"
 
 
-@pytest.mark.langchain
 def test_on_chain_end_passes_result_string_as_claim_to_verify(mocker):
     """T-32 #1c: outputs['result'] is passed as the claim argument to verify()."""
     mock_verify = mocker.patch(
@@ -146,7 +143,6 @@ def test_on_chain_end_passes_result_string_as_claim_to_verify(mocker):
     assert claim_passed == "Revenue was $5M."
 
 
-@pytest.mark.langchain
 def test_on_chain_end_handles_multiple_source_documents(mocker):
     """T-32 #1d: All documents in source_documents are converted to Source objects."""
     mock_verify = mocker.patch(
@@ -174,7 +170,6 @@ def test_on_chain_end_handles_multiple_source_documents(mocker):
     assert all(isinstance(s, Source) for s in sources_passed)
 
 
-@pytest.mark.langchain
 def test_on_chain_end_calls_verify_exactly_once(mocker):
     """T-32 #1e: verify() is called exactly once per on_chain_end invocation."""
     mock_verify = mocker.patch(
@@ -201,7 +196,6 @@ def test_on_chain_end_calls_verify_exactly_once(mocker):
 # Test 2 — Unsupported chain: missing source_documents raises descriptive error
 # ---------------------------------------------------------------------------
 
-@pytest.mark.langchain
 def test_on_chain_end_raises_verification_failed_error_when_no_source_documents(mocker):
     """T-32 #2a: Missing source_documents key raises VerificationFailedError, not AttributeError."""
     mocker.patch(
@@ -222,7 +216,6 @@ def test_on_chain_end_raises_verification_failed_error_when_no_source_documents(
         callback.on_chain_end(outputs)
 
 
-@pytest.mark.langchain
 def test_on_chain_end_error_message_is_descriptive_for_missing_source_documents(mocker):
     """T-32 #2b: The VerificationFailedError message mentions source_documents or chain type."""
     mocker.patch(
@@ -247,7 +240,6 @@ def test_on_chain_end_error_message_is_descriptive_for_missing_source_documents(
     ), f"Error message was not descriptive enough: {exc_info.value}"
 
 
-@pytest.mark.langchain
 def test_on_chain_end_does_not_raise_attribute_error_for_missing_source_documents(mocker):
     """T-32 #2c: The exception type is NOT AttributeError — it must be VerificationFailedError."""
     mocker.patch(

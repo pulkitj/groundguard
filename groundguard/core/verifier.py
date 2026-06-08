@@ -194,7 +194,7 @@ def verify(
         raise VerificationFailedError(f"Upstream LLM transient failure: {type(e).__name__}.")
 
     try:
-        result = ResultBuilder.build_llm_result(ctx, t3_model, "tier3_llm")
+        result = ResultBuilder.build_llm_result(ctx, t3_model, "tier3_llm", evidence_bundle=tier25_result.evidence_bundle)
     except InvariantError as e:
         e.cost_usd = ctx.cost_tracker.total_cost_usd
         raise
@@ -352,7 +352,7 @@ async def averify(
         raise VerificationFailedError(f"Upstream LLM transient failure: {type(e).__name__}.")
 
     try:
-        result = ResultBuilder.build_llm_result(ctx, t3_model, "tier3_llm")
+        result = ResultBuilder.build_llm_result(ctx, t3_model, "tier3_llm", evidence_bundle=tier25_result.evidence_bundle)
     except InvariantError as e:
         e.cost_usd = ctx.cost_tracker.total_cost_usd
         raise

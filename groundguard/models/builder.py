@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from groundguard._log import logger
-from groundguard.models.result import VerificationResult, AtomicClaimResult
+from groundguard.models.result import VerificationResult, AtomicClaimResult, Citation
 
 if TYPE_CHECKING:
     from groundguard.models.internal import VerificationContext
@@ -47,6 +47,17 @@ class ResultBuilder:
             ctx.tier0_atoms[0].claim_type if ctx.tier0_atoms else "Extractive"
         )
 
+        lexical_citation: Citation | None = None
+        if matched_chunks:
+            top = matched_chunks[0]
+            lexical_citation = Citation(
+                source_id=top.source_id,
+                excerpt=top.text_content,
+                excerpt_char_start=top.char_start,
+                excerpt_char_end=top.char_end,
+                citation_confidence=1.0,
+            )
+
         return VerificationResult(
             is_valid=True,
             overall_verdict=(
@@ -63,6 +74,7 @@ class ResultBuilder:
                     source_excerpt=None,
                     reasoning_basis=None,
                     page_hint=None,
+                    citation=lexical_citation,
                 )
             ],
             factual_consistency_score=1.0,
@@ -81,6 +93,7 @@ class ResultBuilder:
         ctx: VerificationContext,
         t3_model: Tier3ResponseModel,
         method: str,
+        evidence_bundle: list[Chunk] | None = None,
     ) -> VerificationResult:
         """
         Maps Tier3ResponseModel → VerificationResult.
@@ -122,6 +135,22 @@ class ResultBuilder:
                 citation=v.source_excerpt,
                 evaluation_method=claim_type.lower(),
             )
+            citation_obj: Citation | None = None
+            if v.source_id and v.source_excerpt and atom_status == "VERIFIED":
+                confidence: float | None = None
+                if evidence_bundle:
+                    from groundguard.tiers.tier25_preprocessing import _bm25_score_single
+                    matching = next(
+                        (c for c in evidence_bundle if c.source_id == v.source_id), None
+                    )
+                    if matching:
+                        confidence = _bm25_score_single(ctx.claim.split(), matching)
+                citation_obj = Citation(
+                    source_id=v.source_id,
+                    excerpt=v.source_excerpt,
+                    page_hint=page_hints.get(v.source_id),
+                    citation_confidence=confidence,
+                )
             atomic_claims.append(AtomicClaimResult(
                 claim_text=v.claim_text,
                 claim_type=claim_type,
@@ -131,6 +160,7 @@ class ResultBuilder:
                 source_excerpt=v.source_excerpt,
                 reasoning_basis=v.reasoning_basis,
                 page_hint=page_hints.get(v.source_id) if v.source_id else None,
+                citation=citation_obj,
             ))
 
         downgraded = any(
@@ -140,6 +170,7 @@ class ResultBuilder:
         if status == "VERIFIED" and downgraded:
             status = "UNVERIFIABLE"
             is_valid = False
+            norm_score = 0.0
 
         offending_claim = next(
             (a.claim_text for a in atomic_claims if a.status == "CONTRADICTED"), None

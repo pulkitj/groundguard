@@ -182,13 +182,6 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                     excerpt_char_start=chunk.char_start + start,
                     excerpt_char_end=chunk.char_start + end,
                 )
-                return Tier25Result(
-                    has_conflict=True,
-                    verification_method="tier25_numerical",
-                    evidence_bundle=build_evidence_bundle(ctx, chunks),
-                    conflict_citation=year_conflict_citation,
-                    numerical_checks=[],
-                )
     else:
         # Loop completed without finding a supporting chunk
         if year_conflict_citation is not None:
@@ -206,7 +199,11 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                 pass
 
         # For each claim number, check against chunk numbers
+        # Skip year values — they are exclusively handled by the year conflict loop above.
+        claim_year_floats = {float(y) for y in claim_years}
         for i, claim_float in enumerate(claim_floats):
+            if claim_float in claim_year_floats:
+                continue
             claim_raw = claim_numbers_raw[i] if i < len(claim_numbers_raw) else str(claim_float)
 
             if is_range_claim:
@@ -257,13 +254,7 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                                 excerpt_char_start=chunk.char_start + start,
                                 excerpt_char_end=chunk.char_start + end,
                             )
-                    return Tier25Result(
-                        has_conflict=True,
-                        verification_method="tier25_numerical",
-                        evidence_bundle=evidence_bundle,
-                        conflict_citation=conflict_citation,
-                        numerical_checks=checks,
-                    )
+                    continue
                 elif chunk_floats and claim_float in chunk_floats:
                     matched_floats.add(claim_float)
                     checks.append(NumericalCheckResult(

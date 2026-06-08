@@ -3,7 +3,6 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 
-@pytest.mark.loaders
 def test_pdf_to_text_missing_dep_raises_import_error():
     """pdf_to_text raises ImportError with install hint when pypdf is absent."""
     import sys
@@ -15,7 +14,6 @@ def test_pdf_to_text_missing_dep_raises_import_error():
             helpers_mod.pdf_to_text("any_path.pdf")
 
 
-@pytest.mark.loaders
 def test_docx_to_text_missing_dep_raises_import_error():
     """docx_to_text raises ImportError with install hint when python-docx is absent."""
     import sys
