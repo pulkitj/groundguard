@@ -277,21 +277,20 @@ def test_fatal_contradiction_overrides_score_threshold(mocker):
 # Behavioural edge-case 2 — Citation invariant enforced through the pipeline
 # ---------------------------------------------------------------------------
 
-def test_verify_downgrades_extractive_without_excerpt_to_unverifiable(
+def test_verify_parse_error_when_excerpt_persistently_absent(
     mock_llm_no_excerpt, bypass_tier2
 ):
-    """VERIFIED extractive claim with no source_excerpt must be downgraded to UNVERIFIABLE
-    from within the full verify() pipeline.
+    """VERIFIED with no source_excerpt on both retry attempts produces PARSE_ERROR.
 
-    The LLM returns Entailment / VERIFIED but omits source_excerpt.  ResultBuilder
-    must detect this and downgrade it before producing a VerificationResult, since a
-    grounded extractive claim without an evidence excerpt is unprovable.
+    The model_validator on AtomicVerification raises ValidationError when status is
+    VERIFIED/CONTRADICTED and neither source_excerpt nor reasoning_basis is provided.
+    Both retry attempts return the same no-excerpt payload, so evaluate() exhausts
+    its 2-attempt loop and raises ParseError, which verify() catches as PARSE_ERROR.
     """
     src = Source(source_id="s1", content="Revenue grew.")
     result = verify("Revenue grew.", [src])
-    assert result.status == "UNVERIFIABLE"
+    assert result.status == "PARSE_ERROR"
     assert result.is_valid is False
-    assert result.atomic_claims[0].status == "UNVERIFIABLE"
 
 
 def test_verify_does_not_raise_for_inferential_without_excerpt(

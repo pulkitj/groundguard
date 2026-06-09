@@ -1,7 +1,7 @@
 """Tier 3 LLM response models."""
 from __future__ import annotations
 from typing import Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class SentenceResult(BaseModel):
@@ -67,6 +67,20 @@ class AtomicVerification(BaseModel):
         if isinstance(v, str):
             return [v]
         return v
+
+    @model_validator(mode="after")
+    def _require_evidence(self) -> "AtomicVerification":
+        if self.status in ("VERIFIED", "CONTRADICTED"):
+            has_excerpt = self.source_excerpt is not None
+            has_reasoning = bool(self.reasoning_basis)
+            if not has_excerpt and not has_reasoning:
+                raise ValueError(
+                    f"status={self.status!r} requires evidence: provide source_excerpt "
+                    "(verbatim quote) for Extractive claims, or reasoning_basis (list of "
+                    "reasoning steps) for Inferential claims. If neither is possible, "
+                    "downgrade status to 'UNVERIFIABLE'."
+                )
+        return self
 
 
 class SourceAttribution(BaseModel):

@@ -53,6 +53,7 @@ def _valid_t3() -> Tier3ResponseModel:
                 claim_text="Revenue was $5M.",
                 status="VERIFIED",
                 source_id="doc.pdf",
+                source_excerpt="Revenue was $5M.",
             )
         ],
         source_attributions=[SourceAttribution(source_id="doc.pdf", role="Supporting")],

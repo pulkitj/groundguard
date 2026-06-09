@@ -315,7 +315,7 @@ def _mock_tier3_result_t108(status: str):
         ),
         factual_consistency_score=90.0,
         verifications=[AtomicVerification(claim_text="x", status=status, source_id="s1",
-                                         source_excerpt="x" if status == "VERIFIED" else None)],
+                                         source_excerpt="x" if status in ("VERIFIED", "CONTRADICTED") else None)],
         source_attributions=[SourceAttribution(source_id="s1", role="Supporting")],
         overall_verdict="Supported.",
     )

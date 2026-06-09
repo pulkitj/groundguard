@@ -191,6 +191,7 @@ def evaluate(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3ResponseMode
             "messages": messages,
             "response_format": Tier3ResponseModel,
             "temperature": temperature,
+            "timeout": 45,
         }
         if ctx.api_base:
             base_kwargs["api_base"] = ctx.api_base
@@ -206,10 +207,9 @@ def evaluate(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3ResponseMode
             return parse_response(response, ctx.model)
         except (pydantic.ValidationError, ValueError, IndexError) as e:
             logger.warning(
-                "Tier 3 attempt %d/2 failed validation — retrying with temperature=0.1",
+                "Tier 3 attempt %d/2 failed validation — retrying",
                 attempt + 1,
             )
-            temperature = 0.1
             error_suffix = (
                 f"\n\nYour previous response failed validation: {str(e)}. "
                 "Output exclusively a valid structured object matching the required schema. "
@@ -238,6 +238,7 @@ async def evaluate_async(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3
             "messages": messages,
             "response_format": Tier3ResponseModel,
             "temperature": temperature,
+            "timeout": 45,
         }
         if ctx.api_base:
             base_kwargs["api_base"] = ctx.api_base
@@ -256,7 +257,6 @@ async def evaluate_async(ctx: VerificationContext, chunks: list[Chunk]) -> Tier3
                 "Tier 3 async attempt %d/2 failed validation — retrying",
                 attempt + 1,
             )
-            temperature = 0.1
             error_suffix = (
                 f"\n\nYour previous response failed validation: {str(e)}. "
                 "Output exclusively a valid structured object matching the required schema. "

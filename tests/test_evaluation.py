@@ -113,7 +113,7 @@ def test_parse_response_uses_parsed_attribute_if_present():
 
 # TDD #6a and #6b — retry and ParseError (appended in T-22)
 def test_evaluate_retries_once_on_validation_error(mocker):
-    """TDD #6a: On first ValidationError, retries with temperature=0.1 and error appended."""
+    """TDD #6a: On first ValidationError, retries with error message appended."""
     import pydantic
     from groundguard.tiers.tier3_evaluation import evaluate
 

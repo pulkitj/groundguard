@@ -76,32 +76,30 @@ def test_contradiction_maps_to_contradicted():
     ctx = _make_ctx()
     t3 = _make_t3_model(label="Contradiction", verifications=[
         AtomicVerification(claim_text="Revenue was $5M.", status="CONTRADICTED",
-                           source_id="doc.pdf", source_excerpt=None, reasoning_basis=None)
+                           source_id="doc.pdf", source_excerpt="Revenue was $5M.", reasoning_basis=None)
     ])
     result = ResultBuilder.build_llm_result(ctx, t3, "tier3_llm")
     assert result.status == "CONTRADICTED"
     assert result.is_valid is False
 
 
-def test_verified_extractive_missing_citation_downgrades_not_raises():
-    """LLM returns VERIFIED for extractive atom with no source_excerpt.
-    build_llm_result must NOT raise — atom status is downgraded to UNVERIFIABLE."""
+def test_verified_extractive_missing_citation_raises_at_model_construction():
+    """VERIFIED with no source_excerpt and no reasoning_basis raises ValidationError.
+
+    The model_validator on AtomicVerification enforces this at construction time —
+    the LLM can never deliver a no-evidence VERIFIED through parse_response() because
+    the error surfaces within the evaluate() retry window, not after it.
+    """
+    import pydantic
     from groundguard.models.tier3 import AtomicVerification
-    ctx = _make_ctx()
-    t3 = _make_t3_model(label="Entailment", verifications=[
+    with pytest.raises(pydantic.ValidationError, match="requires evidence"):
         AtomicVerification(
             claim_text="Revenue was $5M.",
             status="VERIFIED",
             source_id="doc.pdf",
-            source_excerpt=None,   # missing — previously raised InvariantError
+            source_excerpt=None,
             reasoning_basis=None,
         )
-    ])
-    result = ResultBuilder.build_llm_result(ctx, t3, "tier3_llm")  # must not raise
-    assert result.atomic_claims[0].status == "UNVERIFIABLE"
-    # Overall result must also downgrade — returning VERIFIED with an UNVERIFIABLE atom is a broken API contract
-    assert result.status == "UNVERIFIABLE"
-    assert result.is_valid is False
 
 
 def test_inferential_missing_citation_is_not_downgraded():
