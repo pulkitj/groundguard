@@ -1,0 +1,6 @@
+datasets
+ragas
+plotly
+pandas
+langchain-google-vertexai
+
