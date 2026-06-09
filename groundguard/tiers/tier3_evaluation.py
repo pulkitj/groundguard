@@ -4,6 +4,7 @@ import asyncio
 import json
 import pydantic
 import time
+import types
 from typing import TYPE_CHECKING, Any
 
 import litellm
@@ -23,6 +24,41 @@ from groundguard._constants import TRANSIENT_LITELLM_ERRORS  # FIX-02: unified t
 # BUG-03: 5 attempts gives max cumulative backoff of 1+2+4+8 = 15s,
 # which covers typical cloud rate-limit reset windows.
 _BACKOFF_MAX_ATTEMPTS = 5
+
+# Optional fields in AtomicVerification that Groq requires to be present as keys
+# (even when null) due to its grammar engine treating all properties as required.
+_ATOMIC_VERIFICATION_NULLABLE_FIELDS = ("source_excerpt", "reasoning_basis")
+
+
+def _try_recover_groq_json_validation_error(e: "litellm.BadRequestError") -> "Any | None":
+    """
+    Groq's grammar engine rejects responses where optional fields are absent (not null).
+    Extracts failed_generation from the 400 error body, injects null for missing optional
+    AtomicVerification fields, and returns a synthetic response object.
+    Returns None if the error is not a recoverable Groq json_validate_failed.
+    """
+    try:
+        msg = getattr(e, 'message', None) or str(e)
+        brace = msg.find('{')
+        if brace == -1:
+            return None
+        error_body = json.loads(msg[brace:])
+        err = error_body.get('error', {})
+        if err.get('code') != 'json_validate_failed':
+            return None
+        failed_json = err.get('failed_generation')
+        if not failed_json:
+            return None
+        data = json.loads(failed_json)
+        for v in data.get('verifications', []):
+            for field in _ATOMIC_VERIFICATION_NULLABLE_FIELDS:
+                if field not in v:
+                    v[field] = None
+        fixed_content = json.dumps(data)
+        msg_obj = types.SimpleNamespace(content=fixed_content, parsed=None)
+        return types.SimpleNamespace(choices=[types.SimpleNamespace(message=msg_obj)])
+    except Exception:
+        return None
 
 
 TIER3_PROMPT_TEMPLATE = """\
@@ -110,6 +146,12 @@ async def _acompletion_with_backoff(**kwargs) -> Any:
             )
             await asyncio.sleep(delay)
             delay = min(delay * 2, 30.0)
+        except litellm.BadRequestError as e:
+            recovered = _try_recover_groq_json_validation_error(e)
+            if recovered is None:
+                raise
+            logger.warning("Groq json_validate_failed — injecting null for missing optional fields")
+            return recovered
 
 
 def _completion_with_backoff(**kwargs) -> Any:
@@ -127,6 +169,12 @@ def _completion_with_backoff(**kwargs) -> Any:
             )
             time.sleep(delay)
             delay = min(delay * 2, 30.0)
+        except litellm.BadRequestError as e:
+            recovered = _try_recover_groq_json_validation_error(e)
+            if recovered is None:
+                raise
+            logger.warning("Groq json_validate_failed — injecting null for missing optional fields")
+            return recovered
 
 
 def render_prompt(ctx: VerificationContext, chunks: list[Chunk]) -> str:
