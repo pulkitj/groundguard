@@ -8,8 +8,13 @@ This document defines the execution contract for the `groundguard` library. It d
 
 These invariants always hold. If any of them would be violated, an exception is raised instead of returning a result.
 
-**Citation on VERIFIED results**
-Every `AtomicClaimResult` with `status="VERIFIED"` has a non-null `citation`. This is enforced by `_assert_citation_invariant` in `ResultBuilder` — a `VERIFIED` result with a null citation raises `InvariantError` before it can be returned.
+**Citation on VERIFIED and CONTRADICTED results**
+Every `AtomicClaimResult` with `status="VERIFIED"` or `status="CONTRADICTED"` has a non-null `citation`. This is enforced in two layers:
+
+1. **At parse time** — `AtomicVerification` carries a `model_validator` that raises `ValueError` if `status` is `VERIFIED` or `CONTRADICTED` but both `source_excerpt` and `reasoning_basis` are absent. This fires inside the `evaluate()` retry window, so the LLM receives a corrective error message and a second attempt before the call fails.
+2. **At build time** — `_assert_citation_invariant` in `core/result_builder.py` raises `InvariantError` as a backstop if a no-citation result somehow survives to `ResultBuilder`.
+
+If both retry attempts return no evidence, `ParseError` is raised and the caller receives `status="PARSE_ERROR"` — not an `InvariantError`.
 
 **Non-negative cost**
 `cost_usd` is never negative on any result. The `max_spend` cap is a *soft* cap: the triggering LLM call is allowed to complete and is billed before the cap fires. Subsequent calls in the same context are blocked.
