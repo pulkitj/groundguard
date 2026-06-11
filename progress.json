@@ -28,7 +28,7 @@
     "T-96", "T-97", "T-98",
     "T-100", "T-101", "T-102",
     "T-103", "T-104", "T-105", "T-106", "T-107",
-    "T-108", "T-109", "T-110", "T-111", "T-112", "T-P0"
+    "T-108", "T-109", "T-110", "T-111", "T-112", "T-P0", "T-P1"
   ],
   "skipped_tasks": ["T-57a", "T-59"],
   "skipped_reasons": {
@@ -81,5 +81,5 @@
   "fast_suite_status": "290 tests passing (090185b — citation invariant wired, accumulator fallback, batch contract restored, deterministic integration tests)",
   "real_suite_status": "18/18 passed against ollama/qwen3:30b (~15 min)",
   "infrastructure_fix": "fast suite command updated to exclude 'not compat' — compat suite was leaking real Ollama calls into fast run",
-  "last_updated": "2026-05-03T00:00:00Z"
+  "last_updated": "2026-06-11T16:14:00Z"
 }
