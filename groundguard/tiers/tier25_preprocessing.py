@@ -10,6 +10,18 @@ if TYPE_CHECKING:
 
 from groundguard.models.result import Citation
 
+# Configuration Constants
+APPROX_TOLERANCE: float = 0.10
+APPROX_ZERO_ABS_TOLERANCE: float = 0.10
+UNIT_ANCHOR_WINDOW_TOKENS: int = 2
+HEDGE_SCAN_TOKENS: int = 5
+RHETORICAL_SCAN_TOKENS: int = 3
+MULTI_NUMBER_SKIP_THRESHOLD: int = 1
+EU_INTEGER_MIN_LEAD_DIGITS: int = 1
+EU_INTEGER_DECIMAL_DIGITS: int = 3
+RANGE_CONTAINMENT_STRICT: bool = True
+ABBREVIATED_YEAR_CENTURY_THRESHOLD: int = 100
+
 # Matches: 30%, 300%, $4.2M, $300, 1,000,000, 4.2, 2023, -5%, -$4.2M
 _NUMBER_PATTERN = r'(?<!\w)-?[$]?\d[\d,]*(?:\.\d+)?[%MBKT]?'
 
@@ -20,6 +32,189 @@ _STOPWORDS = {"the", "a", "an", "and", "or", "in", "of", "to", "is", "was", "be"
 
 # Year ONLY in temporal context: "in 2023", "for 2024", "Q3 2023", "FY2024", etc.
 _YEAR_CONTEXT_PATTERN = r'(?:in|for|during|as of|fiscal|FY|Q[1-4])\s+(\d{4})\b'
+
+# Gate 1 - Surface Regex Blocklist
+_GATE1_PATTERNS = [
+    r'^\s*\d+[.)]\s',
+    r'^\s*\(\d+\)\s',
+    r'\[\d+\]',
+    r'\b(?i:section|sec\.?|ch\.?|chapter|appendix|part)\s*\d+[\d.]*',
+    r'\b(?i:fig\.?|figure|table|tbl\.?|chart|diagram|exhibit)\s*\d+[\d.]*',
+    r'\b(?i:eq\.?|equation|formula|theorem|lemma|corollary|prop\.?)\s*\d+',
+    r'\b(?i:step|stage|passage|option|choice|item|entry|note)\s*\d+(?:\s+of\s+\d+)?',
+    r'\b(?i:line|row|col\.?|column|page|pp?\.)\s*\d+',
+    r'\b(?i:problem|exercise|question|q\.?)\s*\d+',
+    r'(?i:phase|stage|part|chapter|study|world\s+war|act|scene)\s+[IVXLCDM]+\b',
+    r'\b[IVXLCDM]+\s+(?i:phase|stage|trial|study)\b',
+    r'\b\d+\s*(?:st|nd|rd|th)\b',
+    r'\bv\d+(\.\d+)+\b',
+    r'\b(?i:version)\s+\d[\d.]*\b',
+    r'\b\d+\.\d+\.\d+\b',
+    r'\b(?i:covid|sars|mers|h\d+n\d*|dsm|icd|hiv)-\d+[-\w]*\b',
+    r'\b(?:[A-Z]{1,5}-\d+|(?!In\b|For\b|On\b|At\b|By\b|With\b|From\b|During\b|Fiscal\b|FY\b|Q[1-4]\b)[A-Z][a-zA-Z0-9]{2,10}\s+\d+)\b',
+    r'\b\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b',
+    r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b',
+    r'\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\b',
+    r'\d+\.?\d*°\s*[NSEWnsew]\b',
+    r'\b(?i:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|'
+    r'jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|'
+    r'dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?\b(?!\s*,?\s*\d{4})',
+    r'\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm|AM|PM|UTC|GMT|EST|PST)?\b',
+    r'\b\d{1,2}\s*(?:am|pm|AM|PM)\b',
+]
+_GATE1_BLOCKLIST = [re.compile(p, flags=re.MULTILINE) for p in _GATE1_PATTERNS]
+_COMBINED_GATE1 = re.compile("|".join(_GATE1_PATTERNS), flags=re.MULTILINE)
+
+
+def mask_structural(text: str) -> str:
+    """Mask structural elements (like chapter headings, step numbers, etc.) with spaces."""
+    if not re.search(r'\d', text):
+        return text
+    return _COMBINED_GATE1.sub(lambda m: ' ' * len(m.group(0)), text)
+
+
+# Pre-Pass B - Composite Number Extraction constants
+_SCALE_MAP = {
+    "hundred": 1e2,
+    "thousand": 1e3, "k": 1e3,
+    "million": 1e6,  "m": 1e6,
+    "billion": 1e9,  "b": 1e9,
+    "trillion": 1e12, "t": 1e12,
+}
+_DIGIT_SCALE_PATTERN = re.compile(
+    r'(\d[\d,]*(?:\.\d+)?)\s+(hundred|thousand|million|billion|trillion)\b',
+    re.IGNORECASE
+)
+_WORD_NUMS = {
+    "a": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    "twenty": 20, "thirty": 30, "forty": 40, "fourty": 40, "fifty": 50,
+    "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+    "half a": 0.5, "half": 0.5,
+    "quarter": 0.25, "quarter of a": 0.25, "a quarter of a": 0.25, "a quarter": 0.25,
+    "three-quarters": 0.75, "three quarters": 0.75, "three quarters of a": 0.75,
+}
+_VERBAL_SCALE_PATTERN = re.compile(
+    r'\b('
+    r'a|one|two|three|four|five|six|seven|eight|nine|ten|'
+    r'eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|'
+    r'(?:twenty|thirty|forty|fourty|fifty|sixty|seventy|eighty|ninety)(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|'
+    r'half a|half|'
+    r'quarter|quarter of a|a quarter of a|a quarter|three-quarters|three quarters|three quarters of a'
+    r')\s+'
+    r'(hundred|thousand|million|billion|trillion)'
+    r'(?:\s+(thousand|million|billion|trillion))?'
+    r's?\b',
+    re.IGNORECASE
+)
+_VAGUE_QUANTIFIER_PATTERN = re.compile(
+    r'\b(?:several|'
+    r'dozens?\s+of|hundreds\s+of|thousands\s+of|'
+    r'millions\s+of|billions\s+of|tens\s+of|'
+    r'a?\s*couple\s+of|a\s+dozen)\b',
+    re.IGNORECASE
+)
+
+
+def _parse_verbal_word(word: str) -> float:
+    """Convert number words like 'twenty-three' into float value."""
+    w = word.lower()
+    if w in _WORD_NUMS:
+        return _WORD_NUMS[w]
+    parts = re.split(r'[-\s]+', w)
+    return sum(_WORD_NUMS[p] for p in parts if p in _WORD_NUMS)
+
+
+def extract_composite_numbers_with_indices(text: str) -> tuple[list[tuple[float, str, int]], str]:
+    """Extract composites with their character start index and remaining text."""
+    results = []
+    modified_text = text
+    # Extract digit scale composites
+    while True:
+        match = _DIGIT_SCALE_PATTERN.search(modified_text)
+        if not match:
+            break
+        digit_part = match.group(1).replace(',', '')
+        scale_word = match.group(2).lower()
+        value = float(digit_part) * _SCALE_MAP[scale_word]
+        raw_span = match.group(0)
+        start, end = match.span()
+        results.append((value, raw_span, start))
+        modified_text = modified_text[:start] + (' ' * len(raw_span)) + modified_text[end:]
+        
+    # Extract verbal scale composites
+    while True:
+        match = _VERBAL_SCALE_PATTERN.search(modified_text)
+        if not match:
+            break
+        group1 = match.group(1)
+        group2 = match.group(2).lower()
+        group3 = match.group(3)
+        value = _parse_verbal_word(group1) * _SCALE_MAP[group2]
+        if group3:
+            value *= _SCALE_MAP[group3.lower()]
+        raw_span = match.group(0)
+        start, end = match.span()
+        results.append((value, raw_span, start))
+        modified_text = modified_text[:start] + (' ' * len(raw_span)) + modified_text[end:]
+        
+    # Return raw results with indices and the modified text
+    return results, modified_text
+
+
+def extract_composite_numbers(text: str) -> tuple[list[tuple[float, str]], str]:
+    """Return list of (value_float, raw_span) and text with those spans replaced by spaces of equal length."""
+    raw_results, modified_text = extract_composite_numbers_with_indices(text)
+    # Sort the raw results by their start index
+    sorted_results = sorted(raw_results, key=lambda x: x[2])
+    # Map 3-tuples to 2-tuples containing only value and raw span
+    results = [(val, raw) for val, raw, _ in sorted_results]
+    return results, modified_text
+
+
+# Pre-Pass C - Accounting Negative Normalization constants
+_ACCT_NEG_PATTERN = re.compile(
+    r'\(\s*'
+    r'(?:'
+    r'[$€£¥₹₩₽]\s*\d[\d,]*(?:\.\d+)?[MBKTmbkt]?'
+    r'|\d[\d,]*(?:\.\d+)?[MBKTmbkt]'
+    r'|\d{1,3}(?:,\d{3})+(?:\.\d+)?'
+    r')'
+    r'\s*\)'
+)
+
+
+def normalize_accounting_negatives(text: str) -> str:
+    """Convert accounting negatives like (1,234.56) to standard format -1234.56."""
+    def replace(match):
+        val = match.group(0)
+        # Strip outer parentheses and spaces, and remove commas
+        inner = val[1:-1].strip().replace(',', '')
+        return '-' + inner
+    return _ACCT_NEG_PATTERN.sub(replace, text)
+
+
+# Pre-Pass D - European Number Normalization constants
+_EU_NUMBER_PATTERN = re.compile(r'\b\d{1,3}(?:\.\d{3})+,\d+\b')
+_EU_UNGROUPED_DECIMAL_RE = re.compile(r'\b(\d+),(\d{2})\b(?!,\d)')
+
+
+def normalize_eu_numbers(text: str) -> str:
+    """Normalize European formatted numbers (1.234,56 -> 1234.56)."""
+    # Pass 1: grouped EU format using _EU_NUMBER_PATTERN
+    def replace_grouped(match):
+        val = match.group(0)
+        return val.replace('.', '').replace(',', '.')
+    
+    text = _EU_NUMBER_PATTERN.sub(replace_grouped, text)
+    
+    # Pass 2: ungrouped EU decimal using _EU_UNGROUPED_DECIMAL_RE
+    text = _EU_UNGROUPED_DECIMAL_RE.sub(r'\1.\2', text)
+    
+    return text
+
 
 
 def _normalise_number(s: str) -> str:
@@ -135,24 +330,43 @@ def build_evidence_bundle(ctx: "VerificationContext", chunks: list, top_k: int =
 
 def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
     """Run numerical consistency check."""
-    # Extract numbers from claim
-    claim_numbers_raw = re.findall(_NUMBER_PATTERN, ctx.claim)
-    if not claim_numbers_raw:
+    # Preprocess claim
+    claim_text = ctx.claim
+    claim_text = mask_structural(claim_text)
+    claim_text = normalize_accounting_negatives(claim_text)
+    claim_text = normalize_eu_numbers(claim_text)
+    claim_composites_with_indices, claim_remaining = extract_composite_numbers_with_indices(claim_text)
+    claim_numbers_raw = re.findall(_NUMBER_PATTERN, claim_remaining)
+    
+    # Check if there are no numbers at all
+    if not claim_composites_with_indices and not claim_numbers_raw:
         return Tier25Result(has_conflict=False, evidence_bundle=build_evidence_bundle(ctx, chunks))
 
     # Guard: insufficient metric context
     if not _has_sufficient_metric_context(ctx.claim):
         return Tier25Result(has_conflict=False, evidence_bundle=build_evidence_bundle(ctx, chunks))
 
-    # Parse claim numbers to floats where possible
-    claim_floats = []
-    for n in claim_numbers_raw:
+    # Construct claim numbers list: (value_float, raw_string, start_idx)
+    claim_all = []
+    for val, raw, start in claim_composites_with_indices:
+        claim_all.append((val, raw, start))
+        
+    for match in re.finditer(_NUMBER_PATTERN, claim_remaining):
+        raw = match.group(0)
         try:
-            claim_floats.append(float(_normalise_number(n)))
+            val = float(_normalise_number(raw))
+            claim_all.append((val, raw, match.start()))
         except ValueError:
             pass
-
-    # Extract contextual years from claim
+            
+    # Sort claim numbers by their start index to keep left-to-right order
+    claim_all.sort(key=lambda x: x[2])
+    claim_numbers = [(val, raw) for val, raw, _ in claim_all]
+    
+    # Extract claim floats
+    claim_floats = [val for val, _ in claim_numbers]
+    
+    # Extract contextual years from claim (using original ctx.claim)
     claim_years = set(extract_contextual_years(ctx.claim))
 
     # Check for range in claim (two numeric values)
@@ -190,21 +404,37 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
 
     matched_floats = set()
     for chunk in chunks:
-        chunk_numbers_raw = re.findall(_NUMBER_PATTERN, chunk.text_content)
-        chunk_floats = []
-        for n in chunk_numbers_raw:
+        # Preprocess chunk
+        chunk_text = chunk.text_content
+        chunk_text = mask_structural(chunk_text)
+        chunk_text = normalize_accounting_negatives(chunk_text)
+        chunk_text = normalize_eu_numbers(chunk_text)
+        chunk_composites_with_indices, chunk_remaining = extract_composite_numbers_with_indices(chunk_text)
+        
+        # Construct chunk numbers list: (value_float, raw_string, start_idx)
+        chunk_all = []
+        for val, raw, start in chunk_composites_with_indices:
+            chunk_all.append((val, raw, start))
+            
+        for match in re.finditer(_NUMBER_PATTERN, chunk_remaining):
+            raw = match.group(0)
             try:
-                chunk_floats.append(float(_normalise_number(n)))
+                val = float(_normalise_number(raw))
+                chunk_all.append((val, raw, match.start()))
             except ValueError:
                 pass
+                
+        # Sort chunk numbers by start index
+        chunk_all.sort(key=lambda x: x[2])
+        chunk_numbers = [(val, raw) for val, raw, _ in chunk_all]
+        chunk_floats = [val for val, _ in chunk_numbers]
 
         # For each claim number, check against chunk numbers
         # Skip year values — they are exclusively handled by the year conflict loop above.
         claim_year_floats = {float(y) for y in claim_years}
-        for i, claim_float in enumerate(claim_floats):
+        for claim_float, claim_raw in claim_numbers:
             if claim_float in claim_year_floats:
                 continue
-            claim_raw = claim_numbers_raw[i] if i < len(claim_numbers_raw) else str(claim_float)
 
             if is_range_claim:
                 # Range claim: check if any chunk value falls within range
@@ -221,9 +451,10 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                 else:
                     # No chunk value within range
                     if chunk_floats:
+                        first_chunk_raw = chunk_numbers[0][1] if chunk_numbers else ""
                         checks.append(NumericalCheckResult(
                             claim_number=claim_raw,
-                            source_number=chunk_numbers_raw[0] if chunk_numbers_raw else "",
+                            source_number=first_chunk_raw,
                             match=False,
                             chunk_id=chunk.chunk_id,
                         ))
@@ -236,7 +467,7 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                     if len(chunk_floats) > 1:
                         continue
                     # Mismatch found
-                    chunk_raw = chunk_numbers_raw[0] if chunk_numbers_raw else ""
+                    chunk_raw = chunk_numbers[0][1] if chunk_numbers else ""
                     checks.append(NumericalCheckResult(
                         claim_number=claim_raw,
                         source_number=chunk_raw,
@@ -257,9 +488,15 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                     continue
                 elif chunk_floats and claim_float in chunk_floats:
                     matched_floats.add(claim_float)
+                    # Find the chunk's raw string for this claim_float
+                    chunk_raw = ""
+                    for val, raw in chunk_numbers:
+                        if val == claim_float:
+                            chunk_raw = raw
+                            break
                     checks.append(NumericalCheckResult(
                         claim_number=claim_raw,
-                        source_number=str(claim_float),
+                        source_number=chunk_raw if chunk_raw else str(claim_float),
                         match=True,
                         chunk_id=chunk.chunk_id,
                     ))
