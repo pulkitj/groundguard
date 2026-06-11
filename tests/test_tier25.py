@@ -362,3 +362,192 @@ def test_later_chunk_clears_number_conflict():
     result = run(ctx, [chunk1, chunk2])
     assert result.has_conflict is False
 
+
+# ---------------------------------------------------------------------------
+# T-P1 Gate 1 Blocklist and Composite Pre-Pass
+# ---------------------------------------------------------------------------
+
+def test_t25p1_mask_structural_replaces_section_label_with_spaces_and_preserves_length():
+    from groundguard.tiers.tier25_preprocessing import mask_structural
+
+    text = "Section 3 revenue was $1M"
+    masked = mask_structural(text)
+
+    assert len(masked) == len(text)
+    assert masked.startswith(" " * len("Section 3"))
+    assert masked.endswith(" revenue was $1M")
+
+
+def test_t25p1_gate1_blocklist_is_module_level_compiled_pattern_list():
+    from groundguard.tiers.tier25_preprocessing import _GATE1_BLOCKLIST
+
+    assert isinstance(_GATE1_BLOCKLIST, list)
+    assert _GATE1_BLOCKLIST
+    assert all(isinstance(pattern, re.Pattern) for pattern in _GATE1_BLOCKLIST)
+
+
+def test_t25p1_mask_structural_replaces_citation_bracket_with_spaces_and_preserves_length():
+    from groundguard.tiers.tier25_preprocessing import mask_structural
+
+    text = "See [12] for details"
+    masked = mask_structural(text)
+
+    assert len(masked) == len(text)
+    assert masked == "See      for details"
+
+
+def test_t25p1_mask_structural_leaves_factual_patient_count_unchanged():
+    from groundguard.tiers.tier25_preprocessing import mask_structural
+
+    text = "42 patients enrolled"
+
+    assert mask_structural(text) == text
+
+
+def test_t25p1_extract_composite_numbers_extracts_three_million_and_removes_span():
+    from groundguard.tiers.tier25_preprocessing import extract_composite_numbers
+
+    values, remaining = extract_composite_numbers("3 million users enrolled")
+
+    assert values == [(3000000.0, "3 million")]
+    assert "3 million" not in remaining
+
+
+def test_t25p1_extract_composite_numbers_extracts_decimal_billion():
+    from groundguard.tiers.tier25_preprocessing import extract_composite_numbers
+
+    values, remaining = extract_composite_numbers("2.5 billion revenue")
+
+    assert values == [(2500000000.0, "2.5 billion")]
+    assert "2.5 billion" not in remaining
+
+
+def test_t25p1_passage_label_is_masked_and_currency_value_remains_extractable():
+    from groundguard.tiers.tier25_preprocessing import mask_structural, run
+
+    claim = "Passage 1 states the revenue was $400M"
+    masked = mask_structural(claim)
+    ctx = _make_ctx(claim, "The revenue was $400M.", "s1")
+    chunk = _make_chunk("s1", "The revenue was $400M.")
+    result = run(ctx, [chunk])
+
+    assert "Passage 1" not in masked
+    assert "$400M" in masked
+    assert result.has_conflict is False
+    assert any(
+        check.match and (check.claim_number == "$400M" or check.source_number in {"$400M", "400.0"})
+        for check in result.numerical_checks
+    )
+
+
+def test_t25p1_composite_prepass_prevents_bare_digit_conflict_for_three_million():
+    from groundguard.tiers.tier25_preprocessing import extract_composite_numbers, run
+
+    values, remaining = extract_composite_numbers("3 million users")
+    ctx = _make_ctx("3 million users", "There were 3000000 users.", "s1")
+    chunk = _make_chunk("s1", "There were 3000000 users.")
+    result = run(ctx, [chunk])
+
+    assert values == [(3000000.0, "3 million")]
+    assert "3" not in remaining
+    assert result.has_conflict is False
+
+
+def test_t25p1_accounting_negative_normalizes_parenthesized_suffix_number():
+    from groundguard.tiers.tier25_preprocessing import normalize_accounting_negatives
+
+    assert normalize_accounting_negatives("revenue was ($4.2M)") == "revenue was -$4.2M"
+
+
+def test_t25p1_accounting_negative_normalizes_comma_decimal_number():
+    from groundguard.tiers.tier25_preprocessing import normalize_accounting_negatives
+
+    assert normalize_accounting_negatives("(1,234.56) loss") == "-1234.56 loss"
+
+
+def test_t25p1_accounting_negative_leaves_parenthesized_percentage_unchanged():
+    from groundguard.tiers.tier25_preprocessing import normalize_accounting_negatives
+
+    assert normalize_accounting_negatives("(5%) decline") == "(5%) decline"
+
+
+def test_t25p1_normalize_eu_numbers_converts_comma_decimal_and_dot_thousands():
+    from groundguard.tiers.tier25_preprocessing import normalize_eu_numbers
+
+    assert normalize_eu_numbers("1.234,56 revenue") == "1234.56 revenue"
+
+
+def test_t25p1_normalize_eu_numbers_leaves_non_eu_text_unchanged():
+    from groundguard.tiers.tier25_preprocessing import normalize_eu_numbers
+
+    assert normalize_eu_numbers("price is 1.5 million") == "price is 1.5 million"
+
+
+def test_t25p1_prepasses_apply_to_source_structural_accounting_and_composite_values():
+    from groundguard.tiers.tier25_preprocessing import run
+
+    claim = "Revenue was -1234.56 and enrollment was 3000000."
+    source = "Section 3 reports revenue of (1,234.56) and enrollment of 3 million."
+    ctx = _make_ctx(claim, source, "s1")
+    chunk = _make_chunk("s1", source)
+    result = run(ctx, [chunk])
+
+    assert result.has_conflict is False
+
+
+def test_t25p1_fig_label_is_masked_patient_count_fast_accepts_without_conflict():
+    from groundguard.tiers.tier25_preprocessing import mask_structural, run
+
+    claim = "Fig. 3 shows 42 patients"
+    masked = mask_structural(claim)
+    ctx = _make_ctx(claim, "The study shows 42 patients.", "s1")
+    chunk = _make_chunk("s1", "The study shows 42 patients.")
+    result = run(ctx, [chunk])
+
+    assert "Fig. 3" not in masked
+    assert "42 patients" in masked
+    assert result.has_conflict is False
+
+
+def test_t25p1_step_progress_numbers_are_masked_and_tier25_skips():
+    from groundguard.tiers.tier25_preprocessing import mask_structural, run
+
+    claim = "Step 2 of 5 completed"
+    masked = mask_structural(claim)
+    ctx = _make_ctx(claim, "The task is completed.", "s1")
+    chunk = _make_chunk("s1", "The task is completed.")
+    result = run(ctx, [chunk])
+
+    assert "2" not in masked
+    assert "5" not in masked
+    assert result.has_conflict is False
+    assert result.evidence_bundle == []
+
+
+def test_t25p1_roman_phase_label_is_masked_and_patient_count_remains_extractable():
+    from groundguard.tiers.tier25_preprocessing import mask_structural, run
+
+    claim = "Phase II trial enrolled 200 patients"
+    masked = mask_structural(claim)
+    ctx = _make_ctx(claim, "The trial enrolled 200 patients.", "s1")
+    chunk = _make_chunk("s1", "The trial enrolled 200 patients.")
+    result = run(ctx, [chunk])
+
+    assert "Phase II" not in masked
+    assert "200 patients" in masked
+    assert result.has_conflict is False
+
+
+def test_t25p1_product_version_is_masked_and_percentage_remains_extractable():
+    from groundguard.tiers.tier25_preprocessing import mask_structural, run
+
+    claim = "Windows 11 reached 20% market share"
+    masked = mask_structural(claim)
+    ctx = _make_ctx(claim, "Windows reached 20% market share.", "s1")
+    chunk = _make_chunk("s1", "Windows reached 20% market share.")
+    result = run(ctx, [chunk])
+
+    assert "11" not in masked
+    assert "20%" in masked
+    assert result.has_conflict is False
+
