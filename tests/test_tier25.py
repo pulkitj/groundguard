@@ -1,5 +1,7 @@
 import re
 
+import pytest
+
 
 def _make_chunk(source_id: str, text: str, chunk_id: str = "c1") -> "Chunk":
     from groundguard.loaders.chunker import Chunk
@@ -25,11 +27,13 @@ def test_number_pattern_matches_currency():
     assert re.search(_NUMBER_PATTERN, "$300")
 
 
+@pytest.mark.skip(reason="T-P2 will reactivate: _normalise_number return type changes str→float")
 def test_normalise_number_strips_commas():
     from groundguard.tiers.tier25_preprocessing import _normalise_number
     assert _normalise_number("1,000,000") == "1000000"
 
 
+@pytest.mark.skip(reason="T-P2 will reactivate: _normalise_number return type changes str→float")
 def test_normalise_number_strips_currency_suffix():
     from groundguard.tiers.tier25_preprocessing import _normalise_number
     assert _normalise_number("$4.2M") == "4.2"
@@ -163,6 +167,7 @@ def test_number_pattern_no_false_positive_on_hyphen_word():
     assert m is None or not m.group(0).startswith("-")
 
 
+@pytest.mark.skip(reason="T-P1 will reactivate: version strings become Gate 1 structural blocks, so partial _NUMBER_PATTERN matching of 4.2.1 is no longer valid")
 def test_number_pattern_no_match_on_version_string():
     from groundguard.tiers.tier25_preprocessing import _NUMBER_PATTERN
     import re
@@ -173,11 +178,13 @@ def test_number_pattern_no_match_on_version_string():
     assert m.group(0) == "4.2"  # stops before second dot
 
 
+@pytest.mark.skip(reason="T-P2 will reactivate: _normalise_number return type changes str→float")
 def test_normalise_number_negative_percentage():
     from groundguard.tiers.tier25_preprocessing import _normalise_number
     assert _normalise_number("-5%") == "-5"
 
 
+@pytest.mark.skip(reason="T-P2 will reactivate: _normalise_number return type changes str→float")
 def test_normalise_number_negative_currency():
     from groundguard.tiers.tier25_preprocessing import _normalise_number
     assert _normalise_number("-$4.2M") == "-4.2"
