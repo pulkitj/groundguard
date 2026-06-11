@@ -27,16 +27,14 @@ def test_number_pattern_matches_currency():
     assert re.search(_NUMBER_PATTERN, "$300")
 
 
-@pytest.mark.skip(reason="T-P2 will reactivate: _normalise_number return type changes str→float")
 def test_normalise_number_strips_commas():
     from groundguard.tiers.tier25_preprocessing import _normalise_number
-    assert _normalise_number("1,000,000") == "1000000"
+    assert _normalise_number("1,000,000") == 1000000.0
 
 
-@pytest.mark.skip(reason="T-P2 will reactivate: _normalise_number return type changes str→float")
 def test_normalise_number_strips_currency_suffix():
     from groundguard.tiers.tier25_preprocessing import _normalise_number
-    assert _normalise_number("$4.2M") == "4.2"
+    assert _normalise_number("$4.2M") == 4.2
 
 
 def test_tier25_detects_numerical_conflict():
@@ -178,16 +176,14 @@ def test_number_pattern_no_match_on_version_string():
     assert m.group(0) == "4.2"  # stops before second dot
 
 
-@pytest.mark.skip(reason="T-P2 will reactivate: _normalise_number return type changes str→float")
 def test_normalise_number_negative_percentage():
     from groundguard.tiers.tier25_preprocessing import _normalise_number
-    assert _normalise_number("-5%") == "-5"
+    assert _normalise_number("-5%") == -5.0
 
 
-@pytest.mark.skip(reason="T-P2 will reactivate: _normalise_number return type changes str→float")
 def test_normalise_number_negative_currency():
     from groundguard.tiers.tier25_preprocessing import _normalise_number
-    assert _normalise_number("-$4.2M") == "-4.2"
+    assert _normalise_number("-$4.2M") == -4.2
 
 
 def test_tier25_detects_conflict_for_negative_vs_positive():
@@ -550,4 +546,84 @@ def test_t25p1_product_version_is_masked_and_percentage_remains_extractable():
     assert "11" not in masked
     assert "20%" in masked
     assert result.has_conflict is False
+
+
+# T-P2 Tests
+
+
+def test_extract_and_normalize_euro_revenue():
+    from groundguard.tiers.tier25_preprocessing import _NUMBER_PATTERN, _normalise_number
+    import re
+    m = re.search(_NUMBER_PATTERN, "€1,234.56 revenue")
+    assert _normalise_number(m.group(0) if m else "") == 1234.56
+
+
+def test_extract_and_normalize_positive_growth():
+    from groundguard.tiers.tier25_preprocessing import _NUMBER_PATTERN, _normalise_number
+    import re
+    m = re.search(_NUMBER_PATTERN, "+5% growth")
+    assert _normalise_number(m.group(0) if m else "") == 5.0
+
+
+def test_extract_and_normalize_negative_decline():
+    from groundguard.tiers.tier25_preprocessing import _NUMBER_PATTERN, _normalise_number
+    import re
+    m = re.search(_NUMBER_PATTERN, "-3% decline")
+    assert _normalise_number(m.group(0) if m else "") == -3.0
+
+
+def test_extract_and_normalize_scientific_notation():
+    from groundguard.tiers.tier25_preprocessing import _NUMBER_PATTERN, _normalise_number
+    import re
+    m = re.search(_NUMBER_PATTERN, "1.5e6 infections")
+    assert _normalise_number(m.group(0) if m else "") == 1500000.0
+
+
+def test_extract_and_normalize_basis_points():
+    from groundguard.tiers.tier25_preprocessing import _NUMBER_PATTERN, _normalise_number
+    import re
+    m = re.search(_NUMBER_PATTERN, "50bps rate increase")
+    assert _normalise_number(m.group(0) if m else "") == 0.50
+
+
+def test_normalize_european_format_normalise_number():
+    from groundguard.tiers.tier25_preprocessing import _normalise_number
+    assert _normalise_number("1.234,56") == 1234.56
+
+
+def test_extract_and_normalize_usd_magnitude():
+    from groundguard.tiers.tier25_preprocessing import _NUMBER_PATTERN, _normalise_number
+    import re
+    m = re.search(_NUMBER_PATTERN, "USD 4.2M")
+    assert _normalise_number(m.group(0) if m else "") == 4200000.0
+
+
+def test_normalise_number_empty_string_raises_value_error():
+    from groundguard.tiers.tier25_preprocessing import _normalise_number
+    with pytest.raises(ValueError):
+        _normalise_number("")
+
+
+def test_normalise_number_none_raises_type_error():
+    from groundguard.tiers.tier25_preprocessing import _normalise_number
+    with pytest.raises(TypeError):
+        _normalise_number(None)
+
+
+def test_normalise_number_signed_zero():
+    from groundguard.tiers.tier25_preprocessing import _normalise_number
+    assert _normalise_number("-0.0") == 0.0
+
+
+def test_extract_and_normalize_basis_points_excess_whitespace():
+    from groundguard.tiers.tier25_preprocessing import _NUMBER_PATTERN, _normalise_number
+    import re
+    m = re.search(_NUMBER_PATTERN, "GBP 50 basis  points")
+    assert _normalise_number(m.group(0) if m else "") == 0.50
+
+
+def test_normalize_european_format_with_thousands_separators():
+    from groundguard.tiers.tier25_preprocessing import _normalise_number
+    assert _normalise_number("12.345.678,90") == 12345678.90
+
 
