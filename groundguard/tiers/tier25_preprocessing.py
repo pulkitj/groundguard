@@ -23,7 +23,22 @@ RANGE_CONTAINMENT_STRICT: bool = True
 ABBREVIATED_YEAR_CENTURY_THRESHOLD: int = 100
 
 # Matches: 30%, 300%, $4.2M, $300, 1,000,000, 4.2, 2023, -5%, -$4.2M
-_NUMBER_PATTERN = r'(?<!\w)-?[$]?\d[\d,]*(?:\.\d+)?[%MBKT]?'
+_CURRENCY_PREFIX = r'(?:[$€£¥₹₩₽]|(?:USD|EUR|GBP|JPY|CHF|CAD|AUD|HKD)\s*)'
+_MAGNITUDE_SUFFIX = r'(?:[MBKTmbkt](?:illion)?|bps?|basis\s+points?)?'
+
+_NUMBER_PATTERN = re.compile(
+    r'(?<!\w)'
+    r'[+\-]?'
+    r'(?:' + _CURRENCY_PREFIX + r')?'
+    r'(?:'
+        r'\d[\d,]*(?:\.\d+)?[eE][+\-]?\d+'
+        r'|'
+        r'\d[\d,]*(?:\.\d+)?'
+    r')'
+    r'(?:\s*(?:%|' + _MAGNITUDE_SUFFIX + r'))?'
+    r'(?!\w)',
+    re.IGNORECASE
+)
 
 _STOPWORDS = {"the", "a", "an", "and", "or", "in", "of", "to", "is", "was", "be", "see", "for",
               "section", "details", "reference", "per", "at", "by", "with", "that", "this",
@@ -217,24 +232,64 @@ def normalize_eu_numbers(text: str) -> str:
 
 
 
-def _normalise_number(s: str) -> str:
-    """Strip currency symbols, commas, and suffix letters to get numeric string."""
-    s = s.strip()
-    # Extract and preserve leading minus sign
-    sign = ''
-    if s.startswith('-'):
-        sign = '-'
-        s = s[1:]
-    # Remove leading $
-    if s.startswith('$'):
-        s = s[1:]
-    # Remove trailing %, M, B, K, T (but if it ends with %, the number is the part before)
-    if s.endswith('%'):
-        return sign + s.rstrip('%').replace(',', '')
-    # Remove M/B/K/T suffixes (abbreviations for million/billion/etc.)
-    if s and s[-1].upper() in ('M', 'B', 'K', 'T'):
-        s = s[:-1]
-    return sign + s.replace(',', '')
+def _normalise_number(raw: str) -> float:
+    if raw is None:
+        raise TypeError("Input must be a string")
+    if not isinstance(raw, str):
+        raise TypeError("Input must be a string")
+    raw = raw.strip()
+    if not raw:
+        raise ValueError("Input string cannot be empty")
+    sign = 1.0
+    if raw.startswith('-'):
+        sign = -1.0
+        raw = raw[1:].strip()
+    elif raw.startswith('+'):
+        sign = 1.0
+        raw = raw[1:].strip()
+    is_usd_style_prefix = False
+    if raw.startswith('$'):
+        is_usd_style_prefix = True
+        raw = raw[1:].strip()
+    else:
+        non_usd_symbols = ('€', '£', '¥', '₹', '₩', '₽')
+        for sym in non_usd_symbols:
+            if raw.startswith(sym):
+                raw = raw[len(sym):].strip()
+                break
+        else:
+            iso_codes = ('USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'HKD')
+            for iso in iso_codes:
+                if raw.startswith(iso):
+                    raw = raw[len(iso):].strip()
+                    break
+    if raw.endswith('%'):
+        raw = raw[:-1].strip()
+    is_bps = False
+    bps_match = re.search(r'\s*(?:bps?|basis\s+points?)$', raw, re.IGNORECASE)
+    if bps_match:
+        is_bps = True
+        raw = raw[:bps_match.start()].strip()
+    scale_factor = 1.0
+    mag_match = re.search(r'\s*([MBKTmbkt])(?:illion)?$', raw, re.IGNORECASE)
+    if mag_match:
+        char = mag_match.group(1).lower()
+        scale_factor = _SCALE_MAP.get(char, 1.0)
+        raw = raw[:mag_match.start()].strip()
+    if re.match(r'^\d{1,3}(?:\.\d{3})+\,\d+$', raw):
+        raw = raw.replace('.', '').replace(',', '.')
+    elif ',' in raw and '.' not in raw and not re.search(r'\,\d{3}$', raw):
+        raw = raw.replace(',', '.')
+    else:
+        raw = raw.replace(',', '')
+    val = float(raw)
+    val = val * scale_factor
+    if is_bps:
+        val = val / 100.0
+    val = val * sign
+    if val == 0.0:
+        val = 0.0
+    return val
 
 
 def _has_sufficient_metric_context(text: str) -> bool:
