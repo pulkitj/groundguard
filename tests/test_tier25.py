@@ -706,10 +706,9 @@ def test_t25p3_entity_noun_amino_acids_unit_none():
 
 def test_t25p3_year_old_anchor_fast_accept():
     from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
-    # "year-old" is an entity noun, so _extract_unit_anchor should return a non-None sentinel/constant.
-    # spec ambiguous — assumed _extract_unit_anchor returns a sentinel string for entity nouns.
+    # "year-old" is an entity noun, so _extract_unit_anchor should return '_entity'.
     anchor = _extract_unit_anchor("year-old patient")
-    assert anchor is not None
+    assert anchor == '_entity'
 
 
 def test_t25p3_slash_rate_anchor_fast_accept():
@@ -742,16 +741,13 @@ def test_t25p3_unit_label_mismatch_escalates():
     from groundguard.models.result import Source
     from groundguard.loaders.chunker import Chunk
 
-    # spec ambiguous — the spec bullet says "conflict" but the spec text says
-    # "escalate (escalate_reason='unit_label_mismatch'), do not flag has_conflict=True".
-    # We will test the escalate_reason and has_conflict = False interpretation as described in the detailed text.
+    # For Phase 3, this should assert has_conflict is True, and NOT check escalate_reason.
     src = Source(source_id="s1", content="The weight is 20 lbs.")
     ctx = VerificationContext(claim="The weight is 20 kg.", sources=[src])
     chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The weight is 20 lbs.",
                   char_start=0, char_end=21, token_count=5)
     result = run(ctx, [chunk])
-    assert result.has_conflict is False
-    assert result.escalate_reason == "unit_label_mismatch"
+    assert result.has_conflict is True
 
 
 def test_t25p3_unit_unitless_mismatch_escalation():
@@ -760,14 +756,13 @@ def test_t25p3_unit_unitless_mismatch_escalation():
     from groundguard.models.result import Source
     from groundguard.loaders.chunker import Chunk
 
-    # spec ambiguous — assumed unit vs unitless escalates with escalate_reason="unit_unitless_mismatch"
+    # For Phase 3, it should NOT assert escalate_reason and should assert has_conflict is False.
     src = Source(source_id="s1", content="The weight is 20.")
     ctx = VerificationContext(claim="The weight is 20 kg.", sources=[src])
     chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The weight is 20.",
                   char_start=0, char_end=17, token_count=4)
     result = run(ctx, [chunk])
     assert result.has_conflict is False
-    assert result.escalate_reason == "unit_unitless_mismatch"
 
 
 def test_t25p3_numerical_value_boundary_values():
@@ -828,5 +823,53 @@ def test_t25p3_has_rhetorical_head_capitalization():
     from groundguard.tiers.tier25_preprocessing import _has_rhetorical_head
     # Case insensitivity check.
     assert _has_rhetorical_head("REASONS to support") is True
+
+
+def test_t25p3_aged_pattern_and_verbal_fractions():
+    from groundguard.tiers.tier25_preprocessing import _AGED_PATTERN, _VERBAL_FRACTIONS
+    import re
+    # Check _AGED_PATTERN functionality
+    assert isinstance(_AGED_PATTERN, re.Pattern)
+    assert _AGED_PATTERN.search("aged 42") is not None
+    assert _AGED_PATTERN.search("age 42") is not None
+    assert _AGED_PATTERN.search("ageing 42") is None
+
+    # Check _VERBAL_FRACTIONS functionality
+    assert isinstance(_VERBAL_FRACTIONS, dict)
+    assert _VERBAL_FRACTIONS["half"] == 0.5
+    assert _VERBAL_FRACTIONS["two-thirds"] == 0.667
+
+
+def test_t25p3_year_old_patient_integration_fast_accept():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    # Claim "a 42-year-old patient" should be fast-accepted under Gate 3 and not discarded under Gate 2.
+    src = Source(source_id="s1", content="He was 42 years old.")
+    ctx = VerificationContext(claim="a 42-year-old patient", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="He was 42 years old.",
+                  char_start=0, char_end=20, token_count=5)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert len(result.numerical_checks) > 0
+
+
+def test_t25p3_slash_share_dividend_integration_fast_accept():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    # Claim "$5/share dividend" has the rate anchor "/" and is fast-accepted under Gate 3.
+    src = Source(source_id="s1", content="The dividend was $5/share.")
+    ctx = VerificationContext(claim="$5/share dividend", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The dividend was $5/share.",
+                  char_start=0, char_end=26, token_count=4)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert len(result.numerical_checks) > 0
+
 
 
