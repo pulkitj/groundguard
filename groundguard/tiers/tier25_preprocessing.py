@@ -2,13 +2,17 @@
 from __future__ import annotations
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
     from groundguard.models.internal import VerificationContext
     from groundguard.loaders.chunker import Chunk
 
 from groundguard.models.result import Citation
+
+class NumericalValue(NamedTuple):
+    value: float
+    unit: str | None
 
 # Configuration Constants
 APPROX_TOLERANCE: float = 0.10
@@ -21,6 +25,176 @@ EU_INTEGER_MIN_LEAD_DIGITS: int = 1
 EU_INTEGER_DECIMAL_DIGITS: int = 3
 RANGE_CONTAINMENT_STRICT: bool = True
 ABBREVIATED_YEAR_CENTURY_THRESHOLD: int = 100
+
+_RHETORICAL_NOUNS = {
+    "reason", "reasons", "point", "points", "way", "ways",
+    "thing", "things", "factor", "factors", "aspect", "aspects",
+    "consideration", "considerations", "example", "examples",
+    "argument", "arguments", "finding", "findings", "issue", "issues",
+    "element", "elements", "topic", "topics", "idea", "ideas",
+    "concept", "concepts", "type", "types", "kind", "kinds",
+    "category", "categories", "method", "methods", "approach", "approaches",
+    "paragraph", "paragraphs", "sentence", "sentences",
+    "clause", "clauses", "note", "notes", "footnote", "footnotes",
+}
+
+_MEASURABLE_UNITS = {
+    "%", "percent", "percentage",
+    "kg", "g", "mg", "μg", "mcg", "lb", "lbs", "oz", "t", "tonne",
+    "km", "m", "cm", "mm", "mi", "ft", "in", "yd", "nm",
+    "sqm", "sq m", "sqft", "sq ft", "ha", "hectare", "hectares",
+    "acre", "acres", "km2", "m2",
+    "L", "mL", "μL", "dl", "gal", "fl oz",
+    "cal", "kcal", "J", "kJ", "MJ",
+    "W", "kW", "MW", "GW", "V", "A", "kWh", "MWh",
+    "Hz", "kHz", "MHz", "GHz",
+    "°C", "°F", "K",
+    "ppm", "ppb", "mol", "mmol", "μmol",
+    "km/h", "mph", "m/s", "knot", "knots",
+    "B", "KB", "MB", "GB", "TB", "PB", "Mbps", "Gbps",
+    "M", "K", "T",
+    "bps", "bp",
+    "per", "/",
+}
+
+_ENTITY_NOUNS = {
+    "person", "persons", "people",
+    "individual", "individuals",
+    "employee", "employees",
+    "worker", "workers",
+    "staff", "headcount", "personnel",
+    "hire", "hires",
+    "member", "members",
+    "user", "users",
+    "child", "children",
+    "student", "students",
+    "recipient", "recipients",
+    "beneficiary", "beneficiaries",
+    "household", "households",
+    "resident", "residents",
+    "citizen", "citizens",
+    "volunteer", "volunteers",
+    "participant", "participants",
+    "applicant", "applicants",
+    "candidate", "candidates",
+    "voter", "voters",
+    "refugee", "refugees",
+    "patient", "patients",
+    "case", "cases",
+    "death", "deaths",
+    "infection", "infections",
+    "dose", "doses",
+    "trial", "trials",
+    "study", "studies",
+    "bed", "beds",
+    "treatment", "treatments",
+    "procedure", "procedures",
+    "drug", "drugs",
+    "vaccine", "vaccines",
+    "gene", "genes",
+    "compound", "compounds",
+    "species",
+    "amino acid", "amino acids",
+    "protein", "proteins",
+    "sample", "samples",
+    "observation", "observations",
+    "measurement", "measurements",
+    "location", "locations",
+    "site", "sites",
+    "store", "stores",
+    "branch", "branches",
+    "office", "offices",
+    "outlet", "outlets",
+    "facility", "facilities",
+    "plant", "plants",
+    "factory", "factories",
+    "warehouse", "warehouses",
+    "center", "centers",
+    "centre", "centres",
+    "hub", "hubs",
+    "campus", "campuses",
+    "depot", "depots",
+    "station", "stations",
+    "clinic", "clinics",
+    "hospital", "hospitals",
+    "school", "schools",
+    "company", "companies",
+    "firm", "firms",
+    "business", "businesses",
+    "organization", "organizations",
+    "entity", "entities",
+    "subsidiary", "subsidiaries",
+    "partner", "partners",
+    "NGO", "NGOs",
+    "startup", "startups",
+    "customer", "customers",
+    "client", "clients",
+    "subscriber", "subscribers",
+    "product", "products",
+    "item", "items",
+    "unit", "units",
+    "good", "goods",
+    "service", "services",
+    "offering", "offerings",
+    "project", "projects",
+    "initiative", "initiatives",
+    "program", "programs",
+    "programme", "programmes",
+    "deal", "deals",
+    "partnership", "partnerships",
+    "agreement", "agreements",
+    "contract", "contracts",
+    "order", "orders",
+    "shipment", "shipments",
+    "delivery", "deliveries",
+    "incident", "incidents",
+    "event", "events",
+    "transaction", "transactions",
+    "account", "accounts",
+    "market", "markets",
+    "share", "shares",
+    "stock", "stocks",
+    "bond", "bonds",
+    "loan", "loans",
+    "fund", "funds",
+    "portfolio", "portfolios",
+    "asset", "assets",
+    "position", "positions",
+    "holding", "holdings",
+    "investment", "investments",
+    "stake", "stakes",
+    "server", "servers",
+    "node", "nodes",
+    "instance", "instances",
+    "query", "queries",
+    "download", "downloads",
+    "install", "installs",
+    "session", "sessions",
+    "device", "devices",
+    "app", "apps",
+    "application", "applications",
+    "request", "requests",
+    "country", "countries",
+    "nation", "nations",
+    "city", "cities",
+    "region", "regions",
+    "state", "states",
+    "territory", "territories",
+    "job", "jobs",
+    "role", "roles",
+    "vote", "votes",
+    "seat", "seats",
+    "year-old", "years old", "years-old",
+}
+
+_AGED_PATTERN = re.compile(r'\baged?\s+\d+')
+_VERBAL_FRACTIONS = {
+    "half": 0.5, "one-half": 0.5, "one half": 0.5,
+    "one-third": 0.333, "two-thirds": 0.667,
+    "one-quarter": 0.25, "three-quarters": 0.75,
+    "one-fifth": 0.2, "two-fifths": 0.4,
+    "one-tenth": 0.1,
+}
 
 # Matches: 30%, 300%, $4.2M, $300, 1,000,000, 4.2, 2023, -5%, -$4.2M
 _CURRENCY_PREFIX = r'(?:[$€£¥₹₩₽]|(?:USD|EUR|GBP|JPY|CHF|CAD|AUD|HKD)\s*)'
@@ -46,7 +220,7 @@ _STOPWORDS = {"the", "a", "an", "and", "or", "in", "of", "to", "is", "was", "be"
               "will", "would", "may", "can", "its", "it", "we", "our"}
 
 # Year ONLY in temporal context: "in 2023", "for 2024", "Q3 2023", "FY2024", etc.
-_YEAR_CONTEXT_PATTERN = r'(?:in|for|during|as of|fiscal|FY|Q[1-4])\s+(\d{4})\b'
+_YEAR_CONTEXT_PATTERN = r'(?:in|for|during|as of|fiscal|FY|Q[1-4])\s*(\d{4})\b'
 
 # Gate 1 - Surface Regex Blocklist
 _GATE1_PATTERNS = [
@@ -231,7 +405,6 @@ def normalize_eu_numbers(text: str) -> str:
     return text
 
 
-
 def _normalise_number(raw: str) -> float:
     if raw is None:
         raise TypeError("Input must be a string")
@@ -307,7 +480,6 @@ def _is_within_range(source_val: float, claim_vals: list[float]) -> bool:
     return lo <= source_val <= hi
 
 
-
 def extract_contextual_years(text: str) -> list[str]:
     """Return only years that appear in temporal context."""
     # Find all temporal prefixes
@@ -347,6 +519,7 @@ class Tier25Result:
     evidence_bundle: list = field(default_factory=list)
     conflict_citation: "Citation | None" = None
     numerical_checks: list = field(default_factory=list)
+    escalate_reason: str | None = None
 
 
 def extract_excerpt_from_chunk(chunk: "Chunk", pattern: str) -> "tuple[str, int, int] | None":
@@ -383,6 +556,109 @@ def build_evidence_bundle(ctx: "VerificationContext", chunks: list, top_k: int =
     return result
 
 
+_PUNCT_STRIP = str.maketrans("", "", ".,;:!?()''\"\"'")
+
+
+def _extract_unit_anchor(window_text: str) -> str | None:
+    normalized = window_text.replace("/", " / ")
+    tokens = [t.translate(_PUNCT_STRIP) for t in normalized.split()]
+    tokens = [t for t in tokens if t]
+    for n in (2, 1):
+        for i in range(len(tokens) - n + 1):
+            candidate = " ".join(tokens[i:i+n])
+            if candidate == "/":
+                if i + 1 < len(tokens):
+                    next_tok = tokens[i+1]
+                    if next_tok in _ENTITY_NOUNS:
+                        return "_entity"
+                    return "/" + next_tok
+                return "/"
+            if candidate == "per":
+                if i + 1 < len(tokens):
+                    next_tok = tokens[i+1]
+                    if next_tok in _ENTITY_NOUNS:
+                        return "_entity"
+                    return "per " + next_tok
+                return "per"
+            if candidate in _MEASURABLE_UNITS:
+                return candidate
+            if candidate in _ENTITY_NOUNS:
+                return "_entity"
+    return None
+
+
+def _has_rhetorical_head(following_text: str) -> bool:
+    tokens = following_text.split()
+    stripped_tokens = [t.translate(_PUNCT_STRIP) for t in tokens]
+    stripped_tokens = [t for t in stripped_tokens if t]
+    limit = min(RHETORICAL_SCAN_TOKENS, len(stripped_tokens))
+    for i in range(limit):
+        if stripped_tokens[i].lower() in _RHETORICAL_NOUNS:
+            return True
+    return False
+
+
+def check_unit_mismatch(claim_num: NumericalValue, chunk_num: NumericalValue) -> str | None:
+    if claim_num.unit is not None and chunk_num.unit is not None:
+        if claim_num.unit != chunk_num.unit:
+            return "unit_label_mismatch"
+    elif (claim_num.unit is not None) != (chunk_num.unit is not None):
+        return "unit_unitless_mismatch"
+    return None
+
+
+def _extract_numerical_values(preprocessed_text: str, is_claim: bool) -> list[tuple[NumericalValue, str]]:
+    # Extract composites
+    composites, remaining = extract_composite_numbers_with_indices(preprocessed_text)
+    
+    # Store all candidate matches as (value, raw_span, start, end)
+    candidates = []
+    for val, raw, start in composites:
+        candidates.append((val, raw, start, start + len(raw)))
+        
+    for match in re.finditer(_NUMBER_PATTERN, remaining):
+        raw = match.group(0)
+        try:
+            val = float(_normalise_number(raw))
+            candidates.append((val, raw, match.start(), match.end()))
+        except ValueError:
+            pass
+            
+    # Sort candidate matches by start index to keep left-to-right order
+    candidates.sort(key=lambda x: x[2])
+    
+    results = []
+    for val, raw, start, end in candidates:
+        # Extract the window of text following it (up to UNIT_ANCHOR_WINDOW_TOKENS tokens)
+        suffix = preprocessed_text[end:]
+        suffix_tokens = suffix.split()
+        window_tokens = suffix_tokens[:UNIT_ANCHOR_WINDOW_TOKENS]
+        window_text = " ".join(window_tokens)
+        
+        # Strip any leading hyphens/spaces/punctuation from this window
+        stripped_window = window_text.lstrip("- \t\n\r.,;:!?()'" + '"')
+        
+        # Pass the stripped window text to _extract_unit_anchor
+        unit = _extract_unit_anchor(stripped_window)
+        
+        if unit is not None:
+            if unit == "_entity":
+                results.append((NumericalValue(val, None), raw))
+            else:
+                results.append((NumericalValue(val, unit), raw))
+        else:
+            # Gate 2 rhetorical noun check (only for claim text)
+            discard = False
+            if is_claim:
+                if _has_rhetorical_head(stripped_window):
+                    discard = True
+            
+            if not discard:
+                results.append((NumericalValue(val, None), raw))
+                
+    return results
+
+
 def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
     """Run numerical consistency check."""
     # Preprocess claim
@@ -390,36 +666,19 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
     claim_text = mask_structural(claim_text)
     claim_text = normalize_accounting_negatives(claim_text)
     claim_text = normalize_eu_numbers(claim_text)
-    claim_composites_with_indices, claim_remaining = extract_composite_numbers_with_indices(claim_text)
-    claim_numbers_raw = re.findall(_NUMBER_PATTERN, claim_remaining)
     
-    # Check if there are no numbers at all
-    if not claim_composites_with_indices and not claim_numbers_raw:
+    claim_numbers = _extract_numerical_values(claim_text, is_claim=True)
+    
+    # If no numbers remain in the claim, return Tier25Result(has_conflict=False).
+    if not claim_numbers:
         return Tier25Result(has_conflict=False, evidence_bundle=build_evidence_bundle(ctx, chunks))
 
     # Guard: insufficient metric context
     if not _has_sufficient_metric_context(ctx.claim):
         return Tier25Result(has_conflict=False, evidence_bundle=build_evidence_bundle(ctx, chunks))
-
-    # Construct claim numbers list: (value_float, raw_string, start_idx)
-    claim_all = []
-    for val, raw, start in claim_composites_with_indices:
-        claim_all.append((val, raw, start))
-        
-    for match in re.finditer(_NUMBER_PATTERN, claim_remaining):
-        raw = match.group(0)
-        try:
-            val = float(_normalise_number(raw))
-            claim_all.append((val, raw, match.start()))
-        except ValueError:
-            pass
-            
-    # Sort claim numbers by their start index to keep left-to-right order
-    claim_all.sort(key=lambda x: x[2])
-    claim_numbers = [(val, raw) for val, raw, _ in claim_all]
     
     # Extract claim floats
-    claim_floats = [val for val, _ in claim_numbers]
+    claim_floats = [num.value for num, _ in claim_numbers]
     
     # Extract contextual years from claim (using original ctx.claim)
     claim_years = set(extract_contextual_years(ctx.claim))
@@ -432,30 +691,27 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
     conflict_citation = None
     evidence_bundle = build_evidence_bundle(ctx, chunks)
 
-    # Year conflict check loop
-    year_conflict_citation = None
+    # Year conflict check loop: aggregate across all chunks first
+    all_source_years: set[str] = set()
     for chunk in chunks:
-        chunk_years = set(extract_contextual_years(chunk.text_content))
-        if claim_years and chunk_years and claim_years.issubset(chunk_years):
-            # at least one chunk supports the claim year — no conflict
-            year_conflict_citation = None
-            break
-        if claim_years and chunk_years and not claim_years.issubset(chunk_years):
-            # tentative conflict — keep looking in case a later chunk matches
-            excerpt_result = extract_excerpt_from_chunk(chunk, _YEAR_CONTEXT_PATTERN)
-            if excerpt_result and year_conflict_citation is None:
-                excerpt_text, start, end = excerpt_result
-                year_conflict_citation = Citation(
-                    source_id=chunk.source_id,
-                    excerpt=excerpt_text,
-                    excerpt_char_start=chunk.char_start + start,
-                    excerpt_char_end=chunk.char_start + end,
-                )
-    else:
-        # Loop completed without finding a supporting chunk
-        if year_conflict_citation is not None:
-            conflict_found = True
-            conflict_citation = year_conflict_citation
+        all_source_years.update(extract_contextual_years(chunk.text_content))
+
+    if claim_years and not claim_years.issubset(all_source_years):
+        conflict_found = True
+        # Find the first year-bearing chunk to build the conflict_citation.
+        for chunk in chunks:
+            chunk_years = set(extract_contextual_years(chunk.text_content))
+            if chunk_years:
+                excerpt_result = extract_excerpt_from_chunk(chunk, _YEAR_CONTEXT_PATTERN)
+                if excerpt_result:
+                    excerpt_text, start, end = excerpt_result
+                    conflict_citation = Citation(
+                        source_id=chunk.source_id,
+                        excerpt=excerpt_text,
+                        excerpt_char_start=chunk.char_start + start,
+                        excerpt_char_end=chunk.char_start + end,
+                    )
+                    break
 
     matched_floats = set()
     for chunk in chunks:
@@ -464,36 +720,37 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
         chunk_text = mask_structural(chunk_text)
         chunk_text = normalize_accounting_negatives(chunk_text)
         chunk_text = normalize_eu_numbers(chunk_text)
-        chunk_composites_with_indices, chunk_remaining = extract_composite_numbers_with_indices(chunk_text)
         
-        # Construct chunk numbers list: (value_float, raw_string, start_idx)
-        chunk_all = []
-        for val, raw, start in chunk_composites_with_indices:
-            chunk_all.append((val, raw, start))
-            
-        for match in re.finditer(_NUMBER_PATTERN, chunk_remaining):
-            raw = match.group(0)
-            try:
-                val = float(_normalise_number(raw))
-                chunk_all.append((val, raw, match.start()))
-            except ValueError:
-                pass
-                
-        # Sort chunk numbers by start index
-        chunk_all.sort(key=lambda x: x[2])
-        chunk_numbers = [(val, raw) for val, raw, _ in chunk_all]
-        chunk_floats = [val for val, _ in chunk_numbers]
+        chunk_numbers = _extract_numerical_values(chunk_text, is_claim=False)
+        chunk_floats = [num.value for num, _ in chunk_numbers]
 
         # For each claim number, check against chunk numbers
         # Skip year values — they are exclusively handled by the year conflict loop above.
         claim_year_floats = {float(y) for y in claim_years}
-        for claim_float, claim_raw in claim_numbers:
+        for claim_num, claim_raw in claim_numbers:
+            claim_float = claim_num.value
             if claim_float in claim_year_floats:
                 continue
 
             if is_range_claim:
                 # Range claim: check if any chunk value falls within range
-                for chunk_float in chunk_floats:
+                for chunk_num, chunk_raw in chunk_numbers:
+                    chunk_float = chunk_num.value
+                    
+                    # Check unit mismatch with each claim number
+                    for c_num, c_raw in claim_numbers:
+                        if c_num.value in claim_year_floats:
+                            continue
+                        mismatch = check_unit_mismatch(c_num, chunk_num)
+                        if mismatch:
+                            return Tier25Result(
+                                has_conflict=False,
+                                escalate_reason=mismatch,
+                                evidence_bundle=evidence_bundle,
+                                conflict_citation=conflict_citation,
+                                numerical_checks=checks,
+                            )
+                            
                     if _is_within_range(chunk_float, claim_floats):
                         # source value is within claim range — not a conflict
                         checks.append(NumericalCheckResult(
@@ -522,7 +779,16 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                     if len(chunk_floats) > 1:
                         continue
                     # Mismatch found
-                    chunk_raw = chunk_numbers[0][1] if chunk_numbers else ""
+                    chunk_num, chunk_raw = chunk_numbers[0]
+                    mismatch = check_unit_mismatch(claim_num, chunk_num)
+                    if mismatch:
+                        return Tier25Result(
+                            has_conflict=False,
+                            escalate_reason=mismatch,
+                            evidence_bundle=evidence_bundle,
+                            conflict_citation=conflict_citation,
+                            numerical_checks=checks,
+                        )
                     checks.append(NumericalCheckResult(
                         claim_number=claim_raw,
                         source_number=chunk_raw,
@@ -545,10 +811,22 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                     matched_floats.add(claim_float)
                     # Find the chunk's raw string for this claim_float
                     chunk_raw = ""
-                    for val, raw in chunk_numbers:
-                        if val == claim_float:
+                    chunk_num = None
+                    for num, raw in chunk_numbers:
+                        if num.value == claim_float:
                             chunk_raw = raw
+                            chunk_num = num
                             break
+                    if chunk_num is not None:
+                        mismatch = check_unit_mismatch(claim_num, chunk_num)
+                        if mismatch:
+                            return Tier25Result(
+                                has_conflict=False,
+                                escalate_reason=mismatch,
+                                evidence_bundle=evidence_bundle,
+                                conflict_citation=conflict_citation,
+                                numerical_checks=checks,
+                            )
                     checks.append(NumericalCheckResult(
                         claim_number=claim_raw,
                         source_number=chunk_raw if chunk_raw else str(claim_float),
