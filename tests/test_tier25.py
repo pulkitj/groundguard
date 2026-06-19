@@ -829,10 +829,11 @@ def test_t25p3_aged_pattern_and_verbal_fractions():
     from groundguard.tiers.tier25_preprocessing import _AGED_PATTERN, _VERBAL_FRACTIONS
     import re
     # Check _AGED_PATTERN functionality
-    assert isinstance(_AGED_PATTERN, re.Pattern)
-    assert _AGED_PATTERN.search("aged 42") is not None
-    assert _AGED_PATTERN.search("age 42") is not None
-    assert _AGED_PATTERN.search("ageing 42") is None
+    assert isinstance(_AGED_PATTERN, (re.Pattern, str))
+    pattern = re.compile(_AGED_PATTERN) if isinstance(_AGED_PATTERN, str) else _AGED_PATTERN
+    assert pattern.search("aged 42") is not None
+    assert pattern.search("age 42") is not None
+    assert pattern.search("ageing 42") is None
 
     # Check _VERBAL_FRACTIONS functionality
     assert isinstance(_VERBAL_FRACTIONS, dict)
@@ -934,13 +935,15 @@ def test_t25p3_verbal_fractions_integration():
     from groundguard.models.result import Source
     from groundguard.loaders.chunker import Chunk
 
-    # Claim "two-thirds of the patients" vs source "66.7% of the patients" should not conflict
+    # Claim "two-thirds of the patients" vs source "66.7% of the patients"
+    # Claim verbal fraction should escalate
     src = Source(source_id="s1", content="66.7% of the patients")
     ctx = VerificationContext(claim="two-thirds of the patients", sources=[src])
     chunk = Chunk(chunk_id="c1", source_id="s1", text_content="66.7% of the patients",
                   char_start=0, char_end=21, token_count=4)
     result = run(ctx, [chunk])
     assert result.has_conflict is False
+    assert getattr(result, "escalate_reason", None) == "fraction"
 
 
 def test_t25p3_aged_pattern_integration_fast_accept():
@@ -957,6 +960,50 @@ def test_t25p3_aged_pattern_integration_fast_accept():
                   char_start=0, char_end=19, token_count=4)
     result = run(ctx, [chunk])
     assert result.has_conflict is True
+
+
+def test_t25p3_claim_fraction_escalation():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    # Claim has standard fraction "1/3", which should escalate
+    src = Source(source_id="s1", content="0.333 of the patients")
+    ctx = VerificationContext(claim="1/3 of the patients", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="0.333 of the patients",
+                  char_start=0, char_end=21, token_count=4)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert getattr(result, "escalate_reason", None) == "fraction"
+
+
+def test_t25p3_source_fraction_normalization():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    # Claim "0.333 of the patients" vs source "1/3 of the patients" should not conflict (normalizes to 0.333)
+    src = Source(source_id="s1", content="1/3 of the patients")
+    ctx = VerificationContext(claim="0.333 of the patients", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="1/3 of the patients",
+                  char_start=0, char_end=19, token_count=4)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert getattr(result, "escalate_reason", None) is None
+
+
+def test_t25p3_extract_unit_anchor_measurable_units():
+    from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
+    assert _extract_unit_anchor("kg remaining") == "kg"
+    assert _extract_unit_anchor("g of sugar") == "g"
+    assert _extract_unit_anchor("% increase") == "%"
+
+
+def test_t25p3_extract_unit_anchor_multi_word_entity():
+    from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
+    assert _extract_unit_anchor("amino acids found") == "_entity"
 
 
 
