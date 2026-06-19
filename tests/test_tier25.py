@@ -627,3 +627,206 @@ def test_normalize_european_format_with_thousands_separators():
     assert _normalise_number("12.345.678,90") == 12345678.90
 
 
+# T-P3 Tests
+
+def test_t25p3_rhetorical_nouns_set_constant():
+    from groundguard.tiers.tier25_preprocessing import _RHETORICAL_NOUNS
+    assert isinstance(_RHETORICAL_NOUNS, set)
+    assert "reason" in _RHETORICAL_NOUNS
+    assert "ways" in _RHETORICAL_NOUNS
+
+
+def test_t25p3_measurable_units_and_entity_nouns_split():
+    from groundguard.tiers.tier25_preprocessing import _MEASURABLE_UNITS, _ENTITY_NOUNS
+    assert isinstance(_MEASURABLE_UNITS, set)
+    assert isinstance(_ENTITY_NOUNS, set)
+    assert "kg" in _MEASURABLE_UNITS
+    assert "%" in _MEASURABLE_UNITS
+    assert "patients" in _ENTITY_NOUNS
+    assert "locations" in _ENTITY_NOUNS
+
+
+def test_t25p3_numerical_value_named_tuple():
+    from groundguard.tiers.tier25_preprocessing import NumericalValue
+    val = NumericalValue(20.0, "kg")
+    assert val.value == 20.0
+    assert val.unit == "kg"
+
+
+def test_t25p3_rhetorical_noun_reasons_discarded_in_run():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    # Claim has "3 reasons", which should be discarded (0 numbers extracted).
+    # Source has "5 reasons", which is NOT discarded (since Gate 2 only applies to claim).
+    # Because claim number is discarded, no conflict should be found.
+    src = Source(source_id="s1", content="There are 5 reasons.")
+    ctx = VerificationContext(claim="There are 3 reasons.", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="There are 5 reasons.",
+                  char_start=0, char_end=20, token_count=4)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+
+
+def test_t25p3_entity_noun_locations_unit_none():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    # "3 locations confirmed" has the entity noun "locations", so its unit should be None.
+    # When compared with a unitless "3" in the source, it should match directly instead of escalating.
+    src = Source(source_id="s1", content="There were 3 confirmed.")
+    ctx = VerificationContext(claim="3 locations confirmed", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="There were 3 confirmed.",
+                  char_start=0, char_end=23, token_count=4)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason is None
+
+
+def test_t25p3_entity_noun_amino_acids_unit_none():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    # "20 amino acids found" has the entity noun "amino acids" (2-gram), so its unit should be None.
+    # When compared with a unitless "20" in the source, it should match directly instead of escalating.
+    src = Source(source_id="s1", content="There were 20 found.")
+    ctx = VerificationContext(claim="20 amino acids found", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="There were 20 found.",
+                  char_start=0, char_end=20, token_count=4)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason is None
+
+
+def test_t25p3_year_old_anchor_fast_accept():
+    from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
+    # "year-old" is an entity noun, so _extract_unit_anchor should return a non-None sentinel/constant.
+    # spec ambiguous — assumed _extract_unit_anchor returns a sentinel string for entity nouns.
+    anchor = _extract_unit_anchor("year-old patient")
+    assert anchor is not None
+
+
+def test_t25p3_slash_rate_anchor_fast_accept():
+    from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
+    # "/" is a measurable unit rate anchor.
+    # spec ambiguous — assumed _extract_unit_anchor returns "/" for "/share".
+    assert _extract_unit_anchor("/share dividend") == "/"
+
+
+def test_t25p3_rhetorical_noun_ways_discarded_in_run():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    # Claim has "5 ways", which should be discarded.
+    # Source has "10 ways", which is NOT discarded.
+    # Because claim number is discarded, no conflict should be found.
+    src = Source(source_id="s1", content="There are 10 ways.")
+    ctx = VerificationContext(claim="There are 5 ways.", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="There are 10 ways.",
+                  char_start=0, char_end=18, token_count=4)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+
+
+def test_t25p3_unit_label_mismatch_escalates():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    # spec ambiguous — the spec bullet says "conflict" but the spec text says
+    # "escalate (escalate_reason='unit_label_mismatch'), do not flag has_conflict=True".
+    # We will test the escalate_reason and has_conflict = False interpretation as described in the detailed text.
+    src = Source(source_id="s1", content="The weight is 20 lbs.")
+    ctx = VerificationContext(claim="The weight is 20 kg.", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The weight is 20 lbs.",
+                  char_start=0, char_end=21, token_count=5)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason == "unit_label_mismatch"
+
+
+def test_t25p3_unit_unitless_mismatch_escalation():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    # spec ambiguous — assumed unit vs unitless escalates with escalate_reason="unit_unitless_mismatch"
+    src = Source(source_id="s1", content="The weight is 20.")
+    ctx = VerificationContext(claim="The weight is 20 kg.", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The weight is 20.",
+                  char_start=0, char_end=17, token_count=4)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason == "unit_unitless_mismatch"
+
+
+def test_t25p3_numerical_value_boundary_values():
+    from groundguard.tiers.tier25_preprocessing import NumericalValue
+    # Cover zero, negative zero, inf, empty unit, None unit
+    nv1 = NumericalValue(0.0, None)
+    nv2 = NumericalValue(-0.0, "")
+    nv3 = NumericalValue(float('inf'), "kg")
+    assert nv1.value == 0.0
+    assert nv1.unit is None
+    assert nv2.value == -0.0
+    assert nv2.unit == ""
+    assert nv3.value == float('inf')
+    assert nv3.unit == "kg"
+
+
+def test_t25p3_extract_unit_anchor_boundary_empty():
+    from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
+    # Empty string should return None.
+    assert _extract_unit_anchor("") is None
+
+
+def test_t25p3_extract_unit_anchor_boundary_whitespace():
+    from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
+    # Whitespace only should return None.
+    assert _extract_unit_anchor("   \t\n   ") is None
+
+
+def test_t25p3_extract_unit_anchor_adversarial_embedded_word():
+    from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
+    # A unit anchor embedded inside another word (e.g. "kg" in "background") should not match.
+    assert _extract_unit_anchor("background noise") is None
+
+
+def test_t25p3_extract_unit_anchor_punctuation_stripping():
+    from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
+    # Check that punctuation is stripped correctly before checking against anchors.
+    assert _extract_unit_anchor("patients...") in {"_entity", "patients"}
+
+
+def test_t25p3_has_rhetorical_head_boundary_empty():
+    from groundguard.tiers.tier25_preprocessing import _has_rhetorical_head
+    assert _has_rhetorical_head("") is False
+
+
+def test_t25p3_has_rhetorical_head_boundary_whitespace():
+    from groundguard.tiers.tier25_preprocessing import _has_rhetorical_head
+    assert _has_rhetorical_head("   ") is False
+
+
+def test_t25p3_has_rhetorical_head_adversarial_substring():
+    from groundguard.tiers.tier25_preprocessing import _has_rhetorical_head
+    # Substring matches should not be flagged as rhetorical head.
+    assert _has_rhetorical_head("reasonable arguments") is False
+
+
+def test_t25p3_has_rhetorical_head_capitalization():
+    from groundguard.tiers.tier25_preprocessing import _has_rhetorical_head
+    # Case insensitivity check.
+    assert _has_rhetorical_head("REASONS to support") is True
+
+
