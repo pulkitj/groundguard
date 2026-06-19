@@ -803,6 +803,12 @@ def test_t25p3_extract_unit_anchor_punctuation_stripping():
     assert _extract_unit_anchor("patients...") == "_entity"
 
 
+def test_t25p3_extract_unit_anchor_two_token_boundary():
+    from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
+    assert _extract_unit_anchor("about kg") == "kg"
+    assert _extract_unit_anchor("roughly patients") == "_entity"
+
+
 def test_t25p3_has_rhetorical_head_boundary_empty():
     from groundguard.tiers.tier25_preprocessing import _has_rhetorical_head
     assert _has_rhetorical_head("") is False
@@ -823,6 +829,11 @@ def test_t25p3_has_rhetorical_head_capitalization():
     from groundguard.tiers.tier25_preprocessing import _has_rhetorical_head
     # Case insensitivity check.
     assert _has_rhetorical_head("REASONS to support") is True
+
+
+def test_t25p3_has_rhetorical_head_three_token_boundary():
+    from groundguard.tiers.tier25_preprocessing import _has_rhetorical_head
+    assert _has_rhetorical_head("few different reasons") is True
 
 
 def test_t25p3_aged_pattern_and_verbal_fractions():
@@ -1004,6 +1015,40 @@ def test_t25p3_extract_unit_anchor_measurable_units():
 def test_t25p3_extract_unit_anchor_multi_word_entity():
     from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
     assert _extract_unit_anchor("amino acids found") == "_entity"
+
+
+def test_t25p3_differing_rate_denominators_conflict_or_escalate():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    # Claim $5/share vs source $5/hour should not verify because of differing denominators.
+    # It must either conflict (has_conflict=True) or escalate (has_conflict=False, escalate_reason="unit_label_mismatch").
+    src = Source(source_id="s1", content="The price is $5/hour.")
+    ctx = VerificationContext(claim="The price is $5/share.", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The price is $5/hour.",
+                  char_start=0, char_end=21, token_count=5)
+    result = run(ctx, [chunk])
+    # The result must either be a conflict or escalate
+    assert (result.has_conflict is True) or (result.has_conflict is False and getattr(result, "escalate_reason", None) == "unit_label_mismatch")
+
+
+def test_t25p3_rhetorical_noun_in_source_not_discarded():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    # Claim has "3 locations" (factual, kept).
+    # Source has "5 reasons" (rhetorical, but source Gate 2 is not applied, so kept).
+    # Since both are kept, and values mismatch (3 vs 5), it must result in a conflict.
+    src = Source(source_id="s1", content="There were 5 reasons.")
+    ctx = VerificationContext(claim="There were 3 locations.", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="There were 5 reasons.",
+                  char_start=0, char_end=21, token_count=4)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is True
 
 
 
