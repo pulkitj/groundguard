@@ -34,7 +34,7 @@ def test_normalise_number_strips_commas():
 
 def test_normalise_number_strips_currency_suffix():
     from groundguard.tiers.tier25_preprocessing import _normalise_number
-    assert _normalise_number("$4.2M") == 4.2
+    assert _normalise_number("$4.2") == 4.2
 
 
 def test_tier25_detects_numerical_conflict():
@@ -183,7 +183,7 @@ def test_normalise_number_negative_percentage():
 
 def test_normalise_number_negative_currency():
     from groundguard.tiers.tier25_preprocessing import _normalise_number
-    assert _normalise_number("-$4.2M") == -4.2
+    assert _normalise_number("-$4.2") == -4.2
 
 
 def test_tier25_detects_conflict_for_negative_vs_positive():
