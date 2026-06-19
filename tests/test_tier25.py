@@ -705,15 +705,15 @@ def test_t25p3_entity_noun_amino_acids_unit_none():
 def test_t25p3_year_old_anchor_fast_accept():
     from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
     # "year-old" is an entity noun, so _extract_unit_anchor should return '_entity'.
-    anchor = _extract_unit_anchor("-year-old patient")
+    anchor = _extract_unit_anchor("year-old patient")
     assert anchor == '_entity'
 
 
 def test_t25p3_slash_rate_anchor_fast_accept():
     from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
     # "/" is a measurable unit rate anchor.
-    # spec ambiguous — assumed _extract_unit_anchor returns "/" for "/share".
-    assert _extract_unit_anchor("/share dividend") == "/"
+    # We expect _extract_unit_anchor to return "/share" to preserve the denominator for comparison.
+    assert _extract_unit_anchor("/share dividend") == "/share"
 
 
 def test_t25p3_rhetorical_noun_ways_discarded_in_run():
