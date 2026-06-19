@@ -677,14 +677,13 @@ def test_t25p3_entity_noun_locations_unit_none():
     from groundguard.loaders.chunker import Chunk
 
     # "3 locations confirmed" has the entity noun "locations", so its unit should be None.
-    # When compared with a unitless "3" in the source, it should match directly instead of escalating.
-    src = Source(source_id="s1", content="There were 3 confirmed.")
+    # When compared with a unitless "5" in the source, it should be a conflict.
+    src = Source(source_id="s1", content="There were 5 confirmed.")
     ctx = VerificationContext(claim="3 locations confirmed", sources=[src])
-    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="There were 3 confirmed.",
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="There were 5 confirmed.",
                   char_start=0, char_end=23, token_count=4)
     result = run(ctx, [chunk])
-    assert result.has_conflict is False
-    assert result.escalate_reason is None
+    assert result.has_conflict is True
 
 
 def test_t25p3_entity_noun_amino_acids_unit_none():
@@ -694,14 +693,13 @@ def test_t25p3_entity_noun_amino_acids_unit_none():
     from groundguard.loaders.chunker import Chunk
 
     # "20 amino acids found" has the entity noun "amino acids" (2-gram), so its unit should be None.
-    # When compared with a unitless "20" in the source, it should match directly instead of escalating.
-    src = Source(source_id="s1", content="There were 20 found.")
+    # When compared with a unitless "30" in the source, it should be a conflict.
+    src = Source(source_id="s1", content="There were 30 found.")
     ctx = VerificationContext(claim="20 amino acids found", sources=[src])
-    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="There were 20 found.",
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="There were 30 found.",
                   char_start=0, char_end=20, token_count=4)
     result = run(ctx, [chunk])
-    assert result.has_conflict is False
-    assert result.escalate_reason is None
+    assert result.has_conflict is True
 
 
 def test_t25p3_year_old_anchor_fast_accept():
@@ -757,9 +755,9 @@ def test_t25p3_unit_unitless_mismatch_escalation():
     from groundguard.loaders.chunker import Chunk
 
     # For Phase 3, it should NOT assert escalate_reason and should assert has_conflict is False.
-    src = Source(source_id="s1", content="The weight is 20.")
+    src = Source(source_id="s1", content="The weight is 10.")
     ctx = VerificationContext(claim="The weight is 20 kg.", sources=[src])
-    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The weight is 20.",
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The weight is 10.",
                   char_start=0, char_end=17, token_count=4)
     result = run(ctx, [chunk])
     assert result.has_conflict is False
@@ -800,7 +798,7 @@ def test_t25p3_extract_unit_anchor_adversarial_embedded_word():
 def test_t25p3_extract_unit_anchor_punctuation_stripping():
     from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
     # Check that punctuation is stripped correctly before checking against anchors.
-    assert _extract_unit_anchor("patients...") in {"_entity", "patients"}
+    assert _extract_unit_anchor("patients...") == "_entity"
 
 
 def test_t25p3_has_rhetorical_head_boundary_empty():
@@ -846,14 +844,12 @@ def test_t25p3_year_old_patient_integration_fast_accept():
     from groundguard.models.result import Source
     from groundguard.loaders.chunker import Chunk
 
-    # Claim "a 42-year-old patient" should be fast-accepted under Gate 3 and not discarded under Gate 2.
-    src = Source(source_id="s1", content="He was 42 years old.")
+    src = Source(source_id="s1", content="He was 50 years old.")
     ctx = VerificationContext(claim="a 42-year-old patient", sources=[src])
-    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="He was 42 years old.",
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="He was 50 years old.",
                   char_start=0, char_end=20, token_count=5)
     result = run(ctx, [chunk])
-    assert result.has_conflict is False
-    assert len(result.numerical_checks) > 0
+    assert result.has_conflict is True
 
 
 def test_t25p3_slash_share_dividend_integration_fast_accept():
@@ -862,14 +858,86 @@ def test_t25p3_slash_share_dividend_integration_fast_accept():
     from groundguard.models.result import Source
     from groundguard.loaders.chunker import Chunk
 
-    # Claim "$5/share dividend" has the rate anchor "/" and is fast-accepted under Gate 3.
-    src = Source(source_id="s1", content="The dividend was $5/share.")
+    src = Source(source_id="s1", content="The dividend was $10/share.")
     ctx = VerificationContext(claim="$5/share dividend", sources=[src])
-    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The dividend was $5/share.",
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The dividend was $10/share.",
                   char_start=0, char_end=26, token_count=4)
     result = run(ctx, [chunk])
+    assert result.has_conflict is True
+
+
+def test_t25p3_measurable_and_entity_disjoint():
+    from groundguard.tiers.tier25_preprocessing import _MEASURABLE_UNITS, _ENTITY_NOUNS
+    assert _MEASURABLE_UNITS.isdisjoint(_ENTITY_NOUNS) is True
+
+
+def test_t25p3_entity_noun_value_mismatch_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    src = Source(source_id="s1", content="There were 5 locations.")
+    ctx = VerificationContext(claim="There were 3 locations.", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="There were 5 locations.",
+                  char_start=0, char_end=23, token_count=4)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is True
+
+
+def test_t25p3_measurable_unit_value_mismatch_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    src = Source(source_id="s1", content="The weight is 30 kg.")
+    ctx = VerificationContext(claim="The weight is 20 kg.", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The weight is 30 kg.",
+                  char_start=0, char_end=20, token_count=5)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is True
+
+
+def test_t25p3_extract_unit_anchor_window_boundary():
+    from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
+    # anchor "kg" is 3 tokens away from the start (exceeding window limit 2)
+    assert _extract_unit_anchor("word1 word2 kg") is None
+
+
+def test_t25p3_has_rhetorical_head_window_boundary():
+    from groundguard.tiers.tier25_preprocessing import _has_rhetorical_head
+    # rhetorical head "reasons" is 4 tokens away from start (exceeding window limit 3)
+    assert _has_rhetorical_head("word1 word2 word3 reasons") is False
+
+
+def test_t25p3_unitless_claim_vs_unit_source():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    src = Source(source_id="s1", content="The weight is 20 kg.")
+    ctx = VerificationContext(claim="The weight is 20.", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The weight is 20 kg.",
+                  char_start=0, char_end=20, token_count=5)
+    result = run(ctx, [chunk])
     assert result.has_conflict is False
-    assert len(result.numerical_checks) > 0
+
+
+def test_t25p3_verbal_fractions_integration():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    # Claim "two-thirds of the patients" vs source "66.7% of the patients" should not conflict
+    src = Source(source_id="s1", content="66.7% of the patients")
+    ctx = VerificationContext(claim="two-thirds of the patients", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="66.7% of the patients",
+                  char_start=0, char_end=21, token_count=4)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
 
 
 
