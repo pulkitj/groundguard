@@ -705,7 +705,7 @@ def test_t25p3_entity_noun_amino_acids_unit_none():
 def test_t25p3_year_old_anchor_fast_accept():
     from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
     # "year-old" is an entity noun, so _extract_unit_anchor should return '_entity'.
-    anchor = _extract_unit_anchor("year-old patient")
+    anchor = _extract_unit_anchor("-year-old patient")
     assert anchor == '_entity'
 
 
@@ -739,13 +739,14 @@ def test_t25p3_unit_label_mismatch_escalates():
     from groundguard.models.result import Source
     from groundguard.loaders.chunker import Chunk
 
-    # For Phase 3, this should assert has_conflict is True, and NOT check escalate_reason.
+    # For Phase 3, this should assert has_conflict is False, and check escalate_reason.
     src = Source(source_id="s1", content="The weight is 20 lbs.")
     ctx = VerificationContext(claim="The weight is 20 kg.", sources=[src])
     chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The weight is 20 lbs.",
                   char_start=0, char_end=21, token_count=5)
     result = run(ctx, [chunk])
-    assert result.has_conflict is True
+    assert result.has_conflict is False
+    assert getattr(result, "escalate_reason", None) == "unit_label_mismatch"
 
 
 def test_t25p3_unit_unitless_mismatch_escalation():
@@ -754,13 +755,14 @@ def test_t25p3_unit_unitless_mismatch_escalation():
     from groundguard.models.result import Source
     from groundguard.loaders.chunker import Chunk
 
-    # For Phase 3, it should NOT assert escalate_reason and should assert has_conflict is False.
+    # For Phase 3, it should assert escalate_reason and assert has_conflict is False.
     src = Source(source_id="s1", content="The weight is 10.")
     ctx = VerificationContext(claim="The weight is 20 kg.", sources=[src])
     chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The weight is 10.",
                   char_start=0, char_end=17, token_count=4)
     result = run(ctx, [chunk])
     assert result.has_conflict is False
+    assert getattr(result, "escalate_reason", None) == "unit_unitless_mismatch"
 
 
 def test_t25p3_numerical_value_boundary_values():
@@ -917,12 +919,13 @@ def test_t25p3_unitless_claim_vs_unit_source():
     from groundguard.models.result import Source
     from groundguard.loaders.chunker import Chunk
 
-    src = Source(source_id="s1", content="The weight is 20 kg.")
+    src = Source(source_id="s1", content="The weight is 10 kg.")
     ctx = VerificationContext(claim="The weight is 20.", sources=[src])
-    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The weight is 20 kg.",
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The weight is 10 kg.",
                   char_start=0, char_end=20, token_count=5)
     result = run(ctx, [chunk])
     assert result.has_conflict is False
+    assert getattr(result, "escalate_reason", None) == "unit_unitless_mismatch"
 
 
 def test_t25p3_verbal_fractions_integration():
@@ -938,6 +941,22 @@ def test_t25p3_verbal_fractions_integration():
                   char_start=0, char_end=21, token_count=4)
     result = run(ctx, [chunk])
     assert result.has_conflict is False
+
+
+def test_t25p3_aged_pattern_integration_fast_accept():
+    from groundguard.tiers.tier25_preprocessing import run
+    from groundguard.models.internal import VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    # Claim has "aged 42", which should match _AGED_PATTERN and be fast-accepted.
+    # Source has "50", which is unitless. They should conflict (value mismatch).
+    src = Source(source_id="s1", content="The patient was 50.")
+    ctx = VerificationContext(claim="The patient was aged 42", sources=[src])
+    chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The patient was 50.",
+                  char_start=0, char_end=19, token_count=4)
+    result = run(ctx, [chunk])
+    assert result.has_conflict is True
 
 
 
