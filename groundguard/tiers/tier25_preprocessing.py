@@ -35,8 +35,9 @@ _NUMBER_PATTERN = re.compile(
         r'|'
         r'\d[\d,]*(?:\.\d+)?'
     r')'
-    r'(?:%|' + _MAGNITUDE_SUFFIX + r')?'
-    r'(?!\w)'
+    r'(?:\s*(?:%|' + _MAGNITUDE_SUFFIX + r'))?'
+    r'(?!\w)',
+    re.IGNORECASE
 )
 
 _STOPWORDS = {"the", "a", "an", "and", "or", "in", "of", "to", "is", "was", "be", "see", "for",
