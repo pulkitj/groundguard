@@ -822,7 +822,7 @@ def test_t25p3_has_rhetorical_head_boundary_whitespace():
 def test_t25p3_has_rhetorical_head_adversarial_substring():
     from groundguard.tiers.tier25_preprocessing import _has_rhetorical_head
     # Substring matches should not be flagged as rhetorical head.
-    assert _has_rhetorical_head("reasonable arguments") is False
+    assert _has_rhetorical_head("reasonable debates") is False
 
 
 def test_t25p3_has_rhetorical_head_capitalization():

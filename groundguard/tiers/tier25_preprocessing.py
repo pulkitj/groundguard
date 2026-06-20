@@ -556,28 +556,25 @@ def build_evidence_bundle(ctx: "VerificationContext", chunks: list, top_k: int =
     return result
 
 
-_PUNCT_STRIP = str.maketrans("", "", ".,;:!?()''\"\"'")
+_PUNCT_STRIP = str.maketrans("", "", ".,;:!?()''\"\"'’‘“”")
 
 
 def _extract_unit_anchor(window_text: str) -> str | None:
     normalized = window_text.replace("/", " / ")
     tokens = [t.translate(_PUNCT_STRIP) for t in normalized.split()]
     tokens = [t for t in tokens if t]
+    tokens = tokens[:UNIT_ANCHOR_WINDOW_TOKENS]
     for n in (2, 1):
         for i in range(len(tokens) - n + 1):
             candidate = " ".join(tokens[i:i+n])
             if candidate == "/":
                 if i + 1 < len(tokens):
                     next_tok = tokens[i+1]
-                    if next_tok in _ENTITY_NOUNS:
-                        return "_entity"
                     return "/" + next_tok
                 return "/"
             if candidate == "per":
                 if i + 1 < len(tokens):
                     next_tok = tokens[i+1]
-                    if next_tok in _ENTITY_NOUNS:
-                        return "_entity"
                     return "per " + next_tok
                 return "per"
             if candidate in _MEASURABLE_UNITS:
@@ -598,7 +595,7 @@ def _has_rhetorical_head(following_text: str) -> bool:
     return False
 
 
-def check_unit_mismatch(claim_num: NumericalValue, chunk_num: NumericalValue) -> str | None:
+def _check_unit_mismatch(claim_num: NumericalValue, chunk_num: NumericalValue) -> str | None:
     if claim_num.unit is not None and chunk_num.unit is not None:
         if claim_num.unit != chunk_num.unit:
             return "unit_label_mismatch"
@@ -608,11 +605,29 @@ def check_unit_mismatch(claim_num: NumericalValue, chunk_num: NumericalValue) ->
 
 
 def _extract_numerical_values(preprocessed_text: str, is_claim: bool) -> list[tuple[NumericalValue, str]]:
+    # Extract standard numeric fractions \b\d+/\d+\b first to prevent split match
+    fractions = []
+    modified_text = preprocessed_text
+    while True:
+        match = re.search(r"\b(\d+)/(\d+)\b", modified_text)
+        if not match:
+            break
+        num = float(match.group(1))
+        den = float(match.group(2))
+        val = round(num / den, 3)
+        raw_span = match.group(0)
+        start, end = match.span()
+        fractions.append((val, raw_span, start, end))
+        modified_text = modified_text[:start] + (' ' * len(raw_span)) + modified_text[end:]
+
     # Extract composites
-    composites, remaining = extract_composite_numbers_with_indices(preprocessed_text)
+    composites, remaining = extract_composite_numbers_with_indices(modified_text)
     
     # Store all candidate matches as (value, raw_span, start, end)
     candidates = []
+    for val, raw, start, end in fractions:
+        candidates.append((val, raw, start, end))
+        
     for val, raw, start in composites:
         candidates.append((val, raw, start, start + len(raw)))
         
@@ -666,6 +681,20 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
     claim_text = mask_structural(claim_text)
     claim_text = normalize_accounting_negatives(claim_text)
     claim_text = normalize_eu_numbers(claim_text)
+    
+    # Check for verbal or standard fractions in claim to escalate immediately
+    has_verbal_fraction = False
+    for vf in _VERBAL_FRACTIONS:
+        if re.search(r"\b" + re.escape(vf) + r"\b", ctx.claim, re.IGNORECASE):
+            has_verbal_fraction = True
+            break
+    has_numeric_fraction = bool(re.search(r"\b\d+/\d+\b", ctx.claim))
+    if has_verbal_fraction or has_numeric_fraction:
+        return Tier25Result(
+            has_conflict=False,
+            escalate_reason="fraction",
+            evidence_bundle=build_evidence_bundle(ctx, chunks),
+        )
     
     claim_numbers = _extract_numerical_values(claim_text, is_claim=True)
     
@@ -741,7 +770,7 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                     for c_num, c_raw in claim_numbers:
                         if c_num.value in claim_year_floats:
                             continue
-                        mismatch = check_unit_mismatch(c_num, chunk_num)
+                        mismatch = _check_unit_mismatch(c_num, chunk_num)
                         if mismatch:
                             return Tier25Result(
                                 has_conflict=False,
@@ -780,7 +809,7 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                         continue
                     # Mismatch found
                     chunk_num, chunk_raw = chunk_numbers[0]
-                    mismatch = check_unit_mismatch(claim_num, chunk_num)
+                    mismatch = _check_unit_mismatch(claim_num, chunk_num)
                     if mismatch:
                         return Tier25Result(
                             has_conflict=False,
@@ -818,7 +847,7 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                             chunk_num = num
                             break
                     if chunk_num is not None:
-                        mismatch = check_unit_mismatch(claim_num, chunk_num)
+                        mismatch = _check_unit_mismatch(claim_num, chunk_num)
                         if mismatch:
                             return Tier25Result(
                                 has_conflict=False,
