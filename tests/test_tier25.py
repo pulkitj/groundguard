@@ -1051,4 +1051,196 @@ def test_t25p3_rhetorical_noun_in_source_not_discarded():
     assert result.has_conflict is True
 
 
+# T-P4 Tests
+
+def test_t25p4_hedge_lower_set_contains_required_elements():
+    from groundguard.tiers.tier25_preprocessing import _HEDGE_LOWER
+    assert "at least" in _HEDGE_LOWER
+
+
+def test_t25p4_hedge_upper_set_contains_required_elements():
+    from groundguard.tiers.tier25_preprocessing import _HEDGE_UPPER
+    assert "fewer than" in _HEDGE_UPPER
+
+
+def test_t25p4_hedge_approx_set_contains_required_elements():
+    from groundguard.tiers.tier25_preprocessing import _HEDGE_APPROX
+    assert "approximately" in _HEDGE_APPROX
+
+
+def test_t25p4_detect_hedge_almost_percentage():
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    assert detect_hedge("almost 32% of patients", start_offset=7) == "approx"
+
+
+def test_t25p4_detect_hedge_at_least_employees():
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    assert detect_hedge("at least 100 employees hired", start_offset=9) == "lower"
+
+
+def test_t25p4_detect_hedge_fewer_than_cases():
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    assert detect_hedge("fewer than 5 cases reported", start_offset=11) == "upper"
+
+
+def test_t25p4_detect_hedge_approximately_currency():
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    assert detect_hedge("approximately $5M revenue earned", start_offset=14) == "approx"
+
+
+def test_t25p4_detect_hedge_no_hedge_present():
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    assert detect_hedge("the company had 100 employees", start_offset=16) is None
+
+
+def test_t25p4_detect_hedge_sentence_boundary_stops_scan():
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    assert detect_hedge("price is under. 50 patients treated", start_offset=16) is None
+
+
+def test_t25p4_detect_hedge_empty_claim():
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    assert detect_hedge("", 0) is None
+
+
+def test_t25p4_detect_hedge_offset_out_of_bounds():
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    assert detect_hedge("almost 32%", 100) is None
+
+
+def test_t25p4_detect_hedge_offset_negative():
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    assert detect_hedge("almost 32%", -5) is None
+
+
+def test_t25p4_detect_hedge_offset_zero():
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    assert detect_hedge("32% of patients", 0) is None
+
+
+def test_t25p4_detect_hedge_no_index_error_near_start():
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    assert detect_hedge("at 10", 3) is None
+
+
+def test_t25p4_detect_hedge_adversarial_whitespace():
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    assert detect_hedge("almost \n\t 32%", 10) == "approx"
+
+
+def test_t25p4_detect_hedge_adversarial_mixed_case():
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    assert detect_hedge("ALMOST 32%", 7) == "approx"
+
+
+def test_t25p4_detect_hedge_adversarial_non_word_boundary():
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    assert detect_hedge("almostly 32%", 9) is None
+
+
+def test_t25p4_run_approx_within_ten_percent_no_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("almost 32% of patients", "31.5% of patients")
+    chunk = _make_chunk("s1", "31.5% of patients")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+
+
+def test_t25p4_run_lower_bound_greater_than_no_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("at least 100 employees", "150 employees")
+    chunk = _make_chunk("s1", "150 employees")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+
+
+def test_t25p4_run_lower_bound_less_than_has_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("at least 100 employees", "80 employees")
+    chunk = _make_chunk("s1", "80 employees")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is True
+
+
+def test_t25p4_run_upper_bound_less_than_no_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("fewer than 5 cases", "3 cases")
+    chunk = _make_chunk("s1", "3 cases")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+
+
+def test_t25p4_run_approx_currency_within_ten_percent_no_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("approximately $5M revenue", "$4.6M")
+    chunk = _make_chunk("s1", "$4.6M")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+
+
+def test_t25p4_run_approx_currency_outside_ten_percent_has_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("approximately $5M revenue", "$3M")
+    chunk = _make_chunk("s1", "$3M")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is True
+
+
+def test_t25p4_run_approx_zero_claim_within_tolerance_no_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("about 0% growth", "0.08% growth")
+    chunk = _make_chunk("s1", "0.08% growth")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+
+
+def test_t25p4_run_approx_zero_claim_outside_tolerance_has_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("about 0% growth", "0.15% growth")
+    chunk = _make_chunk("s1", "0.15% growth")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is True
+
+
+def test_t25p4_run_upper_bound_exactly_equal_no_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("fewer than 5 cases", "5 cases")
+    chunk = _make_chunk("s1", "5 cases")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+
+
+def test_t25p4_run_upper_bound_greater_than_has_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("fewer than 5 cases", "6 cases")
+    chunk = _make_chunk("s1", "6 cases")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is True
+
+
+def test_t25p4_run_lower_bound_exactly_equal_no_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("at least 100 employees", "100 employees")
+    chunk = _make_chunk("s1", "100 employees")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+
+
+def test_t25p4_run_multiple_numbers_one_hedged_exact_still_required_for_unhedged():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("100 employees and at least 20 managers", "80 employees and 25 managers")
+    chunk = _make_chunk("s1", "80 employees and 25 managers")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is True
+
+
+def test_t25p4_run_multiple_numbers_both_hedged_evaluated_independently():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("at least 100 employees and fewer than 20 managers", "120 employees and 15 managers")
+    chunk = _make_chunk("s1", "120 employees and 15 managers")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+
+
+
 
