@@ -2,7 +2,7 @@
 from __future__ import annotations
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, Literal
 
 if TYPE_CHECKING:
     from groundguard.models.internal import VerificationContext
@@ -196,6 +196,19 @@ _VERBAL_FRACTIONS = {
     "one-tenth": 0.1,
 }
 
+_HEDGE_LOWER = {
+    "at least", "more than", "over", "above", "exceeding",
+    "greater than", "no fewer than", "no less than",
+}
+_HEDGE_UPPER = {
+    "at most", "fewer than", "less than", "under", "below",
+    "no more than", "no greater than",
+}
+_HEDGE_APPROX = {
+    "about", "around", "approximately", "roughly", "nearly",
+    "almost", "close to", "some", "up to", "as many as",
+}
+
 # Matches: 30%, 300%, $4.2M, $300, 1,000,000, 4.2, 2023, -5%, -$4.2M
 _CURRENCY_PREFIX = r'(?:[$€£¥₹₩₽]|(?:USD|EUR|GBP|JPY|CHF|CAD|AUD|HKD)\s*)'
 _MAGNITUDE_SUFFIX = r'(?:[MBKTmbkt](?:illion)?|bps?|basis\s+points?)?'
@@ -213,6 +226,20 @@ _NUMBER_PATTERN = re.compile(
     r'(?!\w)',
     re.IGNORECASE
 )
+
+_BOUND = (
+    r'[+\-]?'
+    r'(?:[$€£¥₹₩₽]|(?:USD|EUR|GBP|JPY|CHF|CAD|AUD|HKD)\s*)?'
+    r'(?:\d[\d,]*(?:\.\d+)?[eE][+\-]?\d+|\d[\d,]*(?:\.\d+)?)'
+    r'(?:\s*(?:%|(?:[MBKTmbkt](?:illion)?|bps?|basis\s+points?)))?'
+)
+
+_RANGE_PATTERNS = [
+    re.compile(rf'{_BOUND}\s*[–—\-]\s*{_BOUND}', re.IGNORECASE),              # $10M–$20M, 10–20%
+    re.compile(rf'{_BOUND}\s+to\s+{_BOUND}', re.IGNORECASE),                   # 20 to 30 percent
+    re.compile(rf'\bbetween\s+{_BOUND}\s+and\s+{_BOUND}', re.IGNORECASE),        # between 5 and 10
+]
+
 
 _STOPWORDS = {"the", "a", "an", "and", "or", "in", "of", "to", "is", "was", "be", "see", "for",
               "section", "details", "reference", "per", "at", "by", "with", "that", "this",
@@ -595,6 +622,32 @@ def _has_rhetorical_head(following_text: str) -> bool:
     return False
 
 
+def detect_hedge(claim: str, start_offset: int) -> Literal["lower", "upper", "approx", None]:
+    if start_offset < 0 or start_offset >= len(claim):
+        return None
+    preceding = claim[:start_offset]
+    boundary_idx = -1
+    for char in (".", "!", "?"):
+        idx = preceding.rfind(char)
+        if idx > boundary_idx:
+            boundary_idx = idx
+    if boundary_idx != -1:
+        preceding = preceding[boundary_idx + 1:]
+    tokens = [t.translate(_PUNCT_STRIP).lower() for t in preceding.split()]
+    tokens = [t for t in tokens if t]
+    tokens = tokens[-5:]
+    for end_idx in range(len(tokens), 0, -1):
+        for start_idx in range(max(0, end_idx - 3), end_idx):
+            phrase = " ".join(tokens[start_idx:end_idx])
+            if phrase in _HEDGE_LOWER:
+                return "lower"
+            if phrase in _HEDGE_UPPER:
+                return "upper"
+            if phrase in _HEDGE_APPROX:
+                return "approx"
+    return None
+
+
 def _check_unit_mismatch(claim_num: NumericalValue, chunk_num: NumericalValue) -> str | None:
     if claim_num.unit is not None and chunk_num.unit is not None:
         if claim_num.unit != chunk_num.unit:
@@ -604,7 +657,7 @@ def _check_unit_mismatch(claim_num: NumericalValue, chunk_num: NumericalValue) -
     return None
 
 
-def _extract_numerical_values(preprocessed_text: str, is_claim: bool) -> list[tuple[NumericalValue, str]]:
+def _extract_numerical_values(preprocessed_text: str, is_claim: bool) -> list[tuple[NumericalValue, str, int]]:
     # Extract standard numeric fractions \b\d+/\d+\b first to prevent split match
     fractions = []
     modified_text = preprocessed_text
@@ -658,9 +711,9 @@ def _extract_numerical_values(preprocessed_text: str, is_claim: bool) -> list[tu
         
         if unit is not None:
             if unit == "_entity":
-                results.append((NumericalValue(val, None), raw))
+                results.append((NumericalValue(val, None), raw, start))
             else:
-                results.append((NumericalValue(val, unit), raw))
+                results.append((NumericalValue(val, unit), raw, start))
         else:
             # Gate 2 rhetorical noun check (only for claim text)
             discard = False
@@ -669,7 +722,7 @@ def _extract_numerical_values(preprocessed_text: str, is_claim: bool) -> list[tu
                     discard = True
             
             if not discard:
-                results.append((NumericalValue(val, None), raw))
+                results.append((NumericalValue(val, None), raw, start))
                 
     return results
 
@@ -707,13 +760,13 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
         return Tier25Result(has_conflict=False, evidence_bundle=build_evidence_bundle(ctx, chunks))
     
     # Extract claim floats
-    claim_floats = [num.value for num, _ in claim_numbers]
+    claim_floats = [num.value for num, _, _ in claim_numbers]
     
     # Extract contextual years from claim (using original ctx.claim)
     claim_years = set(extract_contextual_years(ctx.claim))
 
-    # Check for range in claim (two numeric values)
-    is_range_claim = len(claim_floats) >= 2
+    # Check for range in claim (two numeric values matching range pattern)
+    is_range_claim = len(claim_floats) >= 2 and any(p.search(ctx.claim) for p in _RANGE_PATTERNS)
 
     checks = []
     conflict_found = False
@@ -742,7 +795,12 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                     )
                     break
 
-    matched_floats = set()
+    claim_year_floats = {float(y) for y in claim_years}
+    non_year_claim_numbers = [
+        (num, raw, start) for num, raw, start in claim_numbers
+        if num.value not in claim_year_floats
+    ]
+    matched_claim_keys = set()
     for chunk in chunks:
         # Preprocess chunk
         chunk_text = chunk.text_content
@@ -751,23 +809,20 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
         chunk_text = normalize_eu_numbers(chunk_text)
         
         chunk_numbers = _extract_numerical_values(chunk_text, is_claim=False)
-        chunk_floats = [num.value for num, _ in chunk_numbers]
+        chunk_floats = [num.value for num, _, _ in chunk_numbers]
 
         # For each claim number, check against chunk numbers
         # Skip year values — they are exclusively handled by the year conflict loop above.
-        claim_year_floats = {float(y) for y in claim_years}
-        for claim_num, claim_raw in claim_numbers:
+        for claim_num, claim_raw, claim_start in non_year_claim_numbers:
             claim_float = claim_num.value
-            if claim_float in claim_year_floats:
-                continue
 
             if is_range_claim:
                 # Range claim: check if any chunk value falls within range
-                for chunk_num, chunk_raw in chunk_numbers:
+                for chunk_num, chunk_raw, chunk_start in chunk_numbers:
                     chunk_float = chunk_num.value
                     
                     # Check unit mismatch with each claim number
-                    for c_num, c_raw in claim_numbers:
+                    for c_num, c_raw, _ in claim_numbers:
                         if c_num.value in claim_year_floats:
                             continue
                         mismatch = _check_unit_mismatch(c_num, chunk_num)
@@ -801,14 +856,33 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                         ))
                 break  # only check range once per chunk
             else:
-                # Exact match check
-                if chunk_floats and claim_float not in chunk_floats:
+                # Exact match check / Hedge modifier tolerance check
+                hedge = detect_hedge(claim_text, claim_start)
+                matching_num_info = None
+                for chunk_num, chunk_raw, chunk_start in chunk_numbers:
+                    is_match = False
+                    if hedge == "approx":
+                        if claim_float == 0.0:
+                            is_match = abs(chunk_num.value - claim_float) <= APPROX_ZERO_ABS_TOLERANCE
+                        else:
+                            is_match = abs(chunk_num.value - claim_float) / abs(claim_float) <= APPROX_TOLERANCE
+                    elif hedge == "lower":
+                        is_match = chunk_num.value >= claim_float
+                    elif hedge == "upper":
+                        is_match = chunk_num.value <= claim_float
+                    else:
+                        is_match = chunk_num.value == claim_float
+                    if is_match:
+                        matching_num_info = (chunk_num, chunk_raw)
+                        break
+
+                if chunk_floats and matching_num_info is None:
                     # Only flag when source has exactly one number: ambiguous arithmetic
                     # context (≥2 source values) passes to Tier 3 for LLM reasoning.
-                    if len(chunk_floats) > 1:
+                    if len(chunk_floats) > 1 and len(non_year_claim_numbers) <= 1:
                         continue
                     # Mismatch found
-                    chunk_num, chunk_raw = chunk_numbers[0]
+                    chunk_num, chunk_raw, _ = chunk_numbers[0]
                     mismatch = _check_unit_mismatch(claim_num, chunk_num)
                     if mismatch:
                         return Tier25Result(
@@ -836,26 +910,18 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                                 excerpt_char_end=chunk.char_start + end,
                             )
                     continue
-                elif chunk_floats and claim_float in chunk_floats:
-                    matched_floats.add(claim_float)
-                    # Find the chunk's raw string for this claim_float
-                    chunk_raw = ""
-                    chunk_num = None
-                    for num, raw in chunk_numbers:
-                        if num.value == claim_float:
-                            chunk_raw = raw
-                            chunk_num = num
-                            break
-                    if chunk_num is not None:
-                        mismatch = _check_unit_mismatch(claim_num, chunk_num)
-                        if mismatch:
-                            return Tier25Result(
-                                has_conflict=False,
-                                escalate_reason=mismatch,
-                                evidence_bundle=evidence_bundle,
-                                conflict_citation=conflict_citation,
-                                numerical_checks=checks,
-                            )
+                elif chunk_floats and matching_num_info is not None:
+                    matched_claim_keys.add((claim_float, claim_start))
+                    chunk_num, chunk_raw = matching_num_info
+                    mismatch = _check_unit_mismatch(claim_num, chunk_num)
+                    if mismatch:
+                        return Tier25Result(
+                            has_conflict=False,
+                            escalate_reason=mismatch,
+                            evidence_bundle=evidence_bundle,
+                            conflict_citation=conflict_citation,
+                            numerical_checks=checks,
+                        )
                     checks.append(NumericalCheckResult(
                         claim_number=claim_raw,
                         source_number=chunk_raw if chunk_raw else str(claim_float),
@@ -865,7 +931,8 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
 
     if not conflict_found:
         if not is_range_claim and claim_floats:
-            if all(cf in matched_floats for cf in claim_floats):
+            claim_keys = [(num.value, start) for num, _, start in non_year_claim_numbers]
+            if all(key in matched_claim_keys for key in claim_keys):
                 conflict_citation = None
             else:
                 if conflict_citation is not None:
