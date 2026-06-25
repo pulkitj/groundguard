@@ -227,6 +227,20 @@ _NUMBER_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+_BOUND = (
+    r'[+\-]?'
+    r'(?:[$€£¥₹₩₽]|(?:USD|EUR|GBP|JPY|CHF|CAD|AUD|HKD)\s*)?'
+    r'(?:\d[\d,]*(?:\.\d+)?[eE][+\-]?\d+|\d[\d,]*(?:\.\d+)?)'
+    r'(?:\s*(?:%|(?:[MBKTmbkt](?:illion)?|bps?|basis\s+points?)))?'
+)
+
+_RANGE_PATTERNS = [
+    re.compile(rf'{_BOUND}\s*[–—\-]\s*{_BOUND}', re.IGNORECASE),              # $10M–$20M, 10–20%
+    re.compile(rf'{_BOUND}\s+to\s+{_BOUND}', re.IGNORECASE),                   # 20 to 30 percent
+    re.compile(rf'\bbetween\s+{_BOUND}\s+and\s+{_BOUND}', re.IGNORECASE),        # between 5 and 10
+]
+
+
 _STOPWORDS = {"the", "a", "an", "and", "or", "in", "of", "to", "is", "was", "be", "see", "for",
               "section", "details", "reference", "per", "at", "by", "with", "that", "this",
               "which", "from", "are", "has", "have", "had", "not", "do", "does", "shall",
@@ -609,6 +623,8 @@ def _has_rhetorical_head(following_text: str) -> bool:
 
 
 def detect_hedge(claim: str, start_offset: int) -> Literal["lower", "upper", "approx", None]:
+    if start_offset < 0 or start_offset >= len(claim):
+        return None
     preceding = claim[:start_offset]
     boundary_idx = -1
     for char in (".", "!", "?"):
@@ -749,8 +765,8 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
     # Extract contextual years from claim (using original ctx.claim)
     claim_years = set(extract_contextual_years(ctx.claim))
 
-    # Check for range in claim (two numeric values)
-    is_range_claim = len(claim_floats) >= 2
+    # Check for range in claim (two numeric values matching range pattern)
+    is_range_claim = len(claim_floats) >= 2 and any(p.search(ctx.claim) for p in _RANGE_PATTERNS)
 
     checks = []
     conflict_found = False
@@ -779,7 +795,12 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                     )
                     break
 
-    matched_floats = set()
+    claim_year_floats = {float(y) for y in claim_years}
+    non_year_claim_numbers = [
+        (num, raw, start) for num, raw, start in claim_numbers
+        if num.value not in claim_year_floats
+    ]
+    matched_claim_keys = set()
     for chunk in chunks:
         # Preprocess chunk
         chunk_text = chunk.text_content
@@ -792,11 +813,8 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
 
         # For each claim number, check against chunk numbers
         # Skip year values — they are exclusively handled by the year conflict loop above.
-        claim_year_floats = {float(y) for y in claim_years}
-        for claim_num, claim_raw, claim_start in claim_numbers:
+        for claim_num, claim_raw, claim_start in non_year_claim_numbers:
             claim_float = claim_num.value
-            if claim_float in claim_year_floats:
-                continue
 
             if is_range_claim:
                 # Range claim: check if any chunk value falls within range
@@ -861,7 +879,7 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                 if chunk_floats and matching_num_info is None:
                     # Only flag when source has exactly one number: ambiguous arithmetic
                     # context (≥2 source values) passes to Tier 3 for LLM reasoning.
-                    if len(chunk_floats) > 1:
+                    if len(chunk_floats) > 1 and len(non_year_claim_numbers) <= 1:
                         continue
                     # Mismatch found
                     chunk_num, chunk_raw, _ = chunk_numbers[0]
@@ -893,7 +911,7 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                             )
                     continue
                 elif chunk_floats and matching_num_info is not None:
-                    matched_floats.add(claim_float)
+                    matched_claim_keys.add((claim_float, claim_start))
                     chunk_num, chunk_raw = matching_num_info
                     mismatch = _check_unit_mismatch(claim_num, chunk_num)
                     if mismatch:
@@ -913,7 +931,8 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
 
     if not conflict_found:
         if not is_range_claim and claim_floats:
-            if all(cf in matched_floats for cf in claim_floats):
+            claim_keys = [(num.value, start) for num, _, start in non_year_claim_numbers]
+            if all(key in matched_claim_keys for key in claim_keys):
                 conflict_citation = None
             else:
                 if conflict_citation is not None:
