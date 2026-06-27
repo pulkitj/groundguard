@@ -1342,3 +1342,139 @@ def test_t25p4_run_repeated_identical_values_one_hedged_conflict():
 
 
 
+
+
+# T-P5 Tests
+
+def test_extract_ranges_between_numeric_percent():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("between 20 and 30%") == [(20.0, 30.0, "between 20 and 30%")]
+
+def test_extract_ranges_hyphenated_with_en_dash():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("50–60 patients enrolled") == [(50.0, 60.0, "50–60")]
+
+def test_extract_ranges_hyphenated_ascii():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("ages 18–65") == [(18.0, 65.0, "18–65")]
+
+def test_extract_ranges_currency_magnitudes():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("$10M–$20M revenue") == [(10000000.0, 20000000.0, "$10M–$20M")]
+
+def test_extract_ranges_no_ranges_present():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("no ranges here") == []
+
+def test_extract_ranges_empty_string():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("") == []
+
+def test_extract_ranges_none_raises_type_error():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    with pytest.raises(TypeError):
+        extract_ranges(None)
+
+def test_extract_ranges_open_lower_bound_at_least():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("at least 20") == [(20.0, float('inf'), "at least 20")]
+
+def test_extract_ranges_open_upper_bound_at_most():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("at most 30") == [(float('-inf'), 30.0, "at most 30")]
+
+def test_extract_ranges_suffix_distribution_percent():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("10–20%") == [(10.0, 20.0, "10–20%")]
+
+def test_range_claim_and_source_value_in_range_no_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30%", "25%")
+    chunk = _make_chunk("s1", "25%")
+    assert run(ctx, [chunk]).has_conflict is False
+
+def test_range_claim_and_source_value_below_range_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30%", "15%")
+    chunk = _make_chunk("s1", "15%")
+    assert run(ctx, [chunk]).has_conflict is True
+
+def test_range_claim_and_source_value_above_range_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30%", "35%")
+    chunk = _make_chunk("s1", "35%")
+    assert run(ctx, [chunk]).has_conflict is True
+
+def test_range_claim_and_source_value_at_lower_boundary_no_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30%", "20%")
+    chunk = _make_chunk("s1", "20%")
+    assert run(ctx, [chunk]).has_conflict is False
+
+def test_range_claim_and_source_value_at_upper_boundary_no_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30%", "30%")
+    chunk = _make_chunk("s1", "30%")
+    assert run(ctx, [chunk]).has_conflict is False
+
+def test_range_claim_with_patients_and_source_value_in_range_no_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("50–60 patients enrolled", "55 patients")
+    chunk = _make_chunk("s1", "55 patients")
+    assert run(ctx, [chunk]).has_conflict is False
+
+def test_range_containment_source_inside_claim_no_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30%", "between 22 and 28%")
+    chunk = _make_chunk("s1", "between 22 and 28%")
+    assert run(ctx, [chunk]).has_conflict is False
+
+def test_range_overlap_source_outside_claim_escalates():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30%", "between 25 and 35%")
+    chunk = _make_chunk("s1", "between 25 and 35%")
+    assert run(ctx, [chunk]).has_conflict is False
+
+def test_range_overlap_escalate_reason_set():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30%", "between 25 and 35%")
+    chunk = _make_chunk("s1", "between 25 and 35%")
+    assert run(ctx, [chunk]).escalate_reason is not None
+
+def test_range_disjoint_source_outside_claim_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30%", "between 35 and 45%")
+    chunk = _make_chunk("s1", "between 35 and 45%")
+    assert run(ctx, [chunk]).has_conflict is True
+
+def test_open_range_lower_bound_claim_vs_higher_source_no_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("at least 10", "15")
+    chunk = _make_chunk("s1", "15")
+    assert run(ctx, [chunk]).has_conflict is False
+
+def test_open_range_lower_bound_claim_vs_lower_source_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("at least 10", "5")
+    chunk = _make_chunk("s1", "5")
+    assert run(ctx, [chunk]).has_conflict is True
+
+def test_open_range_upper_bound_claim_vs_lower_source_no_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("at most 20", "15")
+    chunk = _make_chunk("s1", "15")
+    assert run(ctx, [chunk]).has_conflict is False
+
+def test_open_range_upper_bound_claim_vs_higher_source_conflict():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("at most 20", "25")
+    chunk = _make_chunk("s1", "25")
+    assert run(ctx, [chunk]).has_conflict is True
+
+def test_range_claim_does_not_produce_separate_single_numbers():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30% revenue", "25% revenue")
+    chunk = _make_chunk("s1", "25% revenue")
+    result = run(ctx, [chunk])
+    assert len(result.numerical_checks) == 1
+    assert result.numerical_checks[0].claim_number in ("between 20 and 30%", "20 and 30%")
