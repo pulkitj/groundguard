@@ -1011,6 +1011,8 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
             if is_year_val(claim_lo) and is_year_val(claim_hi):
                 continue
             for chunk_lo, chunk_hi, chunk_raw, chunk_unit in chunk_ranges_with_units:
+                if is_year_val(chunk_lo) and is_year_val(chunk_hi):
+                    continue
                 mismatch = _check_unit_mismatch_custom(claim_unit, chunk_unit)
                 if mismatch:
                     return Tier25Result(
@@ -1021,6 +1023,8 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                         numerical_checks=checks,
                     )
             for chunk_val, chunk_raw, chunk_unit in chunk_numbers_with_units:
+                if is_year_val(chunk_val):
+                    continue
                 mismatch = _check_unit_mismatch_custom(claim_unit, chunk_unit)
                 if mismatch:
                     return Tier25Result(
@@ -1034,6 +1038,8 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
         for claim_num, claim_raw, claim_start in non_year_claim_numbers:
             claim_unit = _get_effective_unit(claim_raw, claim_num.unit)
             for chunk_lo, chunk_hi, chunk_raw, chunk_unit in chunk_ranges_with_units:
+                if is_year_val(chunk_lo) and is_year_val(chunk_hi):
+                    continue
                 mismatch = _check_unit_mismatch_custom(claim_unit, chunk_unit)
                 if mismatch:
                     return Tier25Result(
@@ -1044,6 +1050,8 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                         numerical_checks=checks,
                     )
             for chunk_val, chunk_raw, chunk_unit in chunk_numbers_with_units:
+                if is_year_val(chunk_val):
+                    continue
                 mismatch = _check_unit_mismatch_custom(claim_unit, chunk_unit)
                 if mismatch:
                     return Tier25Result(
