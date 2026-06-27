@@ -1473,13 +1473,13 @@ def test_range_overlap_with_strict_containment_false_escalates(monkeypatch):
     assert result.has_conflict is False
     assert result.escalate_reason is not None
 
-def test_range_disjoint_source_outside_claim_escalates():
+def test_range_disjoint_source_outside_claim_conflicts():
     from groundguard.tiers.tier25_preprocessing import run
     ctx = _make_ctx("between 20 and 30%", "between 35 and 45%")
     chunk = _make_chunk("s1", "between 35 and 45%")
     result = run(ctx, [chunk])
-    assert result.has_conflict is False
-    assert result.escalate_reason is not None
+    assert result.has_conflict is True
+    assert result.escalate_reason is None
 
 def test_range_claim_does_not_produce_separate_single_numbers():
     from groundguard.tiers.tier25_preprocessing import run
@@ -1580,3 +1580,34 @@ def test_range_currency_prefix_distribution_unit_check():
     result = run(ctx, [chunk])
     assert result.has_conflict is False
     assert result.escalate_reason == "unit_unitless_mismatch"
+
+
+def test_range_disjoint_with_strict_containment_false_conflicts(monkeypatch):
+    import groundguard.tiers.tier25_preprocessing
+    monkeypatch.setattr(groundguard.tiers.tier25_preprocessing, "RANGE_CONTAINMENT_STRICT", False)
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30%", "between 35 and 45%")
+    chunk = _make_chunk("s1", "between 35 and 45%")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is True
+    assert result.escalate_reason is None
+
+def test_run_multiple_range_claims_evaluated():
+    from groundguard.tiers.tier25_preprocessing import run
+    # Two ranges in claim: "between 20 and 30%" and "50–60 patients"
+    # Source has "35%" (violates first range) and "55 patients" (satisfies second range)
+    # The violation in the first range should trigger conflict.
+    ctx = _make_ctx("between 20 and 30% and 50–60 patients", "35% and 55 patients")
+    chunk = _make_chunk("s1", "35% and 55 patients")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is True
+
+def test_range_to_range_comparison_uses_normalized_bounds():
+    from groundguard.tiers.tier25_preprocessing import run
+    # Both bounds in source "22–28%" should be normalized before comparing.
+    # Claim: "between 20 and 30%" vs source: "22–28%"
+    ctx = _make_ctx("between 20 and 30%", "22–28%")
+    chunk = _make_chunk("s1", "22–28%")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason is None
