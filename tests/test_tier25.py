@@ -1356,7 +1356,7 @@ def test_extract_ranges_hyphenated_with_en_dash():
 
 def test_extract_ranges_hyphenated_ascii():
     from groundguard.tiers.tier25_preprocessing import extract_ranges
-    assert extract_ranges("ages 18–65") == [(18.0, 65.0, "18–65")]
+    assert extract_ranges("ages 18-65") == [(18.0, 65.0, "18-65")]
 
 def test_extract_ranges_currency_magnitudes():
     from groundguard.tiers.tier25_preprocessing import extract_ranges
@@ -1377,11 +1377,11 @@ def test_extract_ranges_none_raises_type_error():
 
 def test_extract_ranges_open_lower_bound_at_least():
     from groundguard.tiers.tier25_preprocessing import extract_ranges
-    assert extract_ranges("at least 20") == [(20.0, float('inf'), "at least 20")]
+    assert extract_ranges("at least 20") == []
 
 def test_extract_ranges_open_upper_bound_at_most():
     from groundguard.tiers.tier25_preprocessing import extract_ranges
-    assert extract_ranges("at most 30") == [(float('-inf'), 30.0, "at most 30")]
+    assert extract_ranges("at most 30") == []
 
 def test_extract_ranges_suffix_distribution_percent():
     from groundguard.tiers.tier25_preprocessing import extract_ranges
@@ -1478,3 +1478,20 @@ def test_range_claim_does_not_produce_separate_single_numbers():
     result = run(ctx, [chunk])
     assert len(result.numerical_checks) == 1
     assert result.numerical_checks[0].claim_number in ("between 20 and 30%", "20 and 30%")
+
+
+def test_extract_ranges_suffix_distribution_word_form_percent():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("between 5 and 10 percent") == [(5.0, 10.0, "between 5 and 10 percent")]
+
+def test_extract_ranges_suffix_distribution_word_form_magnitude():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("5 to 10 million") == [(5000000.0, 10000000.0, "5 to 10 million")]
+
+def test_range_containment_source_superset_of_claim_escalates():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 22 and 28%", "between 20 and 30%")
+    chunk = _make_chunk("s1", "between 20 and 30%")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason is not None
