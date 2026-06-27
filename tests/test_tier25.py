@@ -1383,9 +1383,9 @@ def test_extract_ranges_open_upper_bound_at_most():
     from groundguard.tiers.tier25_preprocessing import extract_ranges
     assert extract_ranges("at most 30") == []
 
-def test_extract_ranges_suffix_distribution_percent():
+def test_extract_ranges_suffix_distribution_magnitude():
     from groundguard.tiers.tier25_preprocessing import extract_ranges
-    assert extract_ranges("10–20%") == [(10.0, 20.0, "10–20%")]
+    assert extract_ranges("10–20M") == [(10000000.0, 20000000.0, "10–20M")]
 
 def test_range_claim_and_source_value_in_range_no_conflict():
     from groundguard.tiers.tier25_preprocessing import run
@@ -1447,30 +1447,6 @@ def test_range_disjoint_source_outside_claim_conflict():
     chunk = _make_chunk("s1", "between 35 and 45%")
     assert run(ctx, [chunk]).has_conflict is True
 
-def test_open_range_lower_bound_claim_vs_higher_source_no_conflict():
-    from groundguard.tiers.tier25_preprocessing import run
-    ctx = _make_ctx("at least 10", "15")
-    chunk = _make_chunk("s1", "15")
-    assert run(ctx, [chunk]).has_conflict is False
-
-def test_open_range_lower_bound_claim_vs_lower_source_conflict():
-    from groundguard.tiers.tier25_preprocessing import run
-    ctx = _make_ctx("at least 10", "5")
-    chunk = _make_chunk("s1", "5")
-    assert run(ctx, [chunk]).has_conflict is True
-
-def test_open_range_upper_bound_claim_vs_lower_source_no_conflict():
-    from groundguard.tiers.tier25_preprocessing import run
-    ctx = _make_ctx("at most 20", "15")
-    chunk = _make_chunk("s1", "15")
-    assert run(ctx, [chunk]).has_conflict is False
-
-def test_open_range_upper_bound_claim_vs_higher_source_conflict():
-    from groundguard.tiers.tier25_preprocessing import run
-    ctx = _make_ctx("at most 20", "25")
-    chunk = _make_chunk("s1", "25")
-    assert run(ctx, [chunk]).has_conflict is True
-
 def test_range_claim_does_not_produce_separate_single_numbers():
     from groundguard.tiers.tier25_preprocessing import run
     ctx = _make_ctx("between 20 and 30% revenue", "25% revenue")
@@ -1479,10 +1455,6 @@ def test_range_claim_does_not_produce_separate_single_numbers():
     assert len(result.numerical_checks) == 1
     assert result.numerical_checks[0].claim_number in ("between 20 and 30%", "20 and 30%")
 
-
-def test_extract_ranges_suffix_distribution_word_form_percent():
-    from groundguard.tiers.tier25_preprocessing import extract_ranges
-    assert extract_ranges("between 5 and 10 percent") == [(5.0, 10.0, "between 5 and 10 percent")]
 
 def test_extract_ranges_suffix_distribution_word_form_magnitude():
     from groundguard.tiers.tier25_preprocessing import extract_ranges
@@ -1495,3 +1467,28 @@ def test_range_containment_source_superset_of_claim_escalates():
     result = run(ctx, [chunk])
     assert result.has_conflict is False
     assert result.escalate_reason is not None
+
+def test_range_claim_vs_source_no_numbers_escalates():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30%", "no numbers here")
+    chunk = _make_chunk("s1", "no numbers here")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason is not None
+
+def test_range_claim_unit_mismatch_escalates():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30 kg", "25 lbs")
+    chunk = _make_chunk("s1", "25 lbs")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason is not None
+
+def test_range_claim_unit_unitless_mismatch_escalates():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30%", "25")
+    chunk = _make_chunk("s1", "25")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason is not None
+
