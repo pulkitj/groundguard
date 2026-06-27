@@ -1346,6 +1346,29 @@ def test_t25p4_run_repeated_identical_values_one_hedged_conflict():
 
 # T-P5 Tests
 
+
+def test_extract_ranges_multiple_ordered_by_position():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("between 20 and 30% and 50–60 patients") == [
+        (20.0, 30.0, "between 20 and 30%"),
+        (50.0, 60.0, "50–60")
+    ]
+
+
+def test_extract_ranges_skips_malformed_normalization_value_error():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("between 20 and 30.0.0%") == []
+
+
+def test_extract_ranges_suffix_distribution_percent():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("10–20%") == [(10.0, 20.0, "10–20%")]
+
+
+def test_extract_ranges_currency_prefix_distribution_upper():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("10 to $20") == [(10.0, 20.0, "10 to $20")]
+
 def test_extract_ranges_between_numeric_percent():
     from groundguard.tiers.tier25_preprocessing import extract_ranges
     assert extract_ranges("between 20 and 30%") == [(20.0, 30.0, "between 20 and 30%")]
@@ -1431,19 +1454,15 @@ def test_range_containment_source_inside_claim_no_conflict():
     assert result.has_conflict is False
     assert result.escalate_reason is None
 
-def test_range_overlap_source_outside_claim_escalates():
+def test_range_overlap_escalates():
     from groundguard.tiers.tier25_preprocessing import run
     ctx = _make_ctx("between 20 and 30%", "between 25 and 35%")
     chunk = _make_chunk("s1", "between 25 and 35%")
-    assert run(ctx, [chunk]).has_conflict is False
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason is not None
 
-def test_range_overlap_escalate_reason_set():
-    from groundguard.tiers.tier25_preprocessing import run
-    ctx = _make_ctx("between 20 and 30%", "between 25 and 35%")
-    chunk = _make_chunk("s1", "between 25 and 35%")
-    assert run(ctx, [chunk]).escalate_reason is not None
-
-def test_range_disjoint_source_outside_claim_conflict():
+def test_range_disjoint_source_outside_claim_escalates():
     from groundguard.tiers.tier25_preprocessing import run
     ctx = _make_ctx("between 20 and 30%", "between 35 and 45%")
     chunk = _make_chunk("s1", "between 35 and 45%")
