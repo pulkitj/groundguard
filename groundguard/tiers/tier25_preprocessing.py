@@ -1089,6 +1089,7 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
         claim_range_escalated[claim_raw] = False
         
     claim_number_matched = {start: False for _, _, start in non_year_claim_numbers}
+    claim_number_has_mismatching_chunk = {start: False for _, _, start in non_year_claim_numbers}
 
     for chunk, chunk_ranges_with_units, chunk_numbers_with_units in chunks_data:
         # Compare ranges
@@ -1126,6 +1127,7 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                         break
                         
         # Compare numbers
+        chunk_floats = [val for val, _, _ in chunk_numbers_with_units]
         for claim_num, claim_raw, claim_start in non_year_claim_numbers:
             claim_float = claim_num.value
             hedge = detect_hedge(claim_text, claim_start)
@@ -1133,14 +1135,14 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
             matching_num_info = None
             for chunk_val, chunk_raw, _ in chunk_numbers_with_units:
                 is_match = False
-                if hedge == "approx":
+                if hedge == 'approx':
                     if claim_float == 0.0:
                         is_match = abs(chunk_val - claim_float) <= APPROX_ZERO_ABS_TOLERANCE
                     else:
                         is_match = abs(chunk_val - claim_float) / abs(claim_float) <= APPROX_TOLERANCE
-                elif hedge == "lower":
+                elif hedge == 'lower':
                     is_match = chunk_val >= claim_float
-                elif hedge == "upper":
+                elif hedge == 'upper':
                     is_match = chunk_val <= claim_float
                 else:
                     is_match = chunk_val == claim_float
@@ -1156,6 +1158,11 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                     match=True,
                     chunk_id=chunk.chunk_id,
                 ))
+            else:
+                if chunk_numbers_with_units:
+                    is_skip = (len(chunk_floats) > 1 and len(non_year_claim_numbers) <= 1)
+                    if not is_skip:
+                        claim_number_has_mismatching_chunk[claim_start] = True
 
     # Evaluate final match results
     for claim_lo, claim_hi, claim_raw, claim_unit in claim_ranges_with_units:
@@ -1165,13 +1172,13 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
             if claim_range_escalated[claim_raw]:
                 return Tier25Result(
                     has_conflict=False,
-                    escalate_reason="range_overlap",
+                    escalate_reason='range_overlap',
                     evidence_bundle=evidence_bundle,
                     conflict_citation=conflict_citation,
                     numerical_checks=checks,
                 )
             else:
-                first_src_raw = ""
+                first_src_raw = ''
                 for _, chunk_ranges_with_units, chunk_numbers_with_units in chunks_data:
                     if chunk_ranges_with_units:
                         first_src_raw = chunk_ranges_with_units[0][2]
@@ -1184,7 +1191,7 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                     claim_number=claim_raw,
                     source_number=first_src_raw,
                     match=False,
-                    chunk_id=chunks[0].chunk_id if chunks else "",
+                    chunk_id=chunks[0].chunk_id if chunks else '',
                 ))
                 conflict_found = True
                 
@@ -1203,39 +1210,40 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
 
     for claim_num, claim_raw, claim_start in non_year_claim_numbers:
         if not claim_number_matched[claim_start]:
-            first_src_raw = ""
-            for _, chunk_ranges_with_units, chunk_numbers_with_units in chunks_data:
-                if chunk_numbers_with_units:
-                    first_src_raw = chunk_numbers_with_units[0][1]
-                    break
-                elif chunk_ranges_with_units:
-                    first_src_raw = chunk_ranges_with_units[0][2]
-                    break
-                    
-            checks.append(NumericalCheckResult(
-                claim_number=claim_raw,
-                source_number=first_src_raw,
-                match=False,
-                chunk_id=chunks[0].chunk_id if chunks else "",
-            ))
-            conflict_found = True
-            
-            if first_src_raw and conflict_citation is None:
-                for chunk, _, _ in chunks_data:
-                    excerpt_result = extract_excerpt_from_chunk(chunk, re.escape(first_src_raw))
-                    if excerpt_result:
-                        excerpt_text, start, end = excerpt_result
-                        conflict_citation = Citation(
-                            source_id=chunk.source_id,
-                            excerpt=excerpt_text,
-                            excerpt_char_start=chunk.char_start + start,
-                            excerpt_char_end=chunk.char_start + end,
-                        )
+            if claim_number_has_mismatching_chunk[claim_start]:
+                first_src_raw = ''
+                for _, chunk_ranges_with_units, chunk_numbers_with_units in chunks_data:
+                    if chunk_numbers_with_units:
+                        first_src_raw = chunk_numbers_with_units[0][1]
                         break
+                    elif chunk_ranges_with_units:
+                        first_src_raw = chunk_ranges_with_units[0][2]
+                        break
+                        
+                checks.append(NumericalCheckResult(
+                    claim_number=claim_raw,
+                    source_number=first_src_raw,
+                    match=False,
+                    chunk_id=chunks[0].chunk_id if chunks else '',
+                ))
+                conflict_found = True
+                
+                if first_src_raw and conflict_citation is None:
+                    for chunk, _, _ in chunks_data:
+                        excerpt_result = extract_excerpt_from_chunk(chunk, re.escape(first_src_raw))
+                        if excerpt_result:
+                            excerpt_text, start, end = excerpt_result
+                            conflict_citation = Citation(
+                                source_id=chunk.source_id,
+                                excerpt=excerpt_text,
+                                excerpt_char_start=chunk.char_start + start,
+                                excerpt_char_end=chunk.char_start + end,
+                            )
+                            break
 
     return Tier25Result(
         has_conflict=conflict_found,
-        verification_method="tier25_numerical",
+        verification_method='tier25_numerical',
         evidence_bundle=evidence_bundle,
         conflict_citation=conflict_citation,
         numerical_checks=checks,
