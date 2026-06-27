@@ -1427,7 +1427,9 @@ def test_range_containment_source_inside_claim_no_conflict():
     from groundguard.tiers.tier25_preprocessing import run
     ctx = _make_ctx("between 20 and 30%", "between 22 and 28%")
     chunk = _make_chunk("s1", "between 22 and 28%")
-    assert run(ctx, [chunk]).has_conflict is False
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason is None
 
 def test_range_overlap_source_outside_claim_escalates():
     from groundguard.tiers.tier25_preprocessing import run
@@ -1445,7 +1447,9 @@ def test_range_disjoint_source_outside_claim_conflict():
     from groundguard.tiers.tier25_preprocessing import run
     ctx = _make_ctx("between 20 and 30%", "between 35 and 45%")
     chunk = _make_chunk("s1", "between 35 and 45%")
-    assert run(ctx, [chunk]).has_conflict is True
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason is not None
 
 def test_range_claim_does_not_produce_separate_single_numbers():
     from groundguard.tiers.tier25_preprocessing import run
@@ -1482,7 +1486,7 @@ def test_range_claim_unit_mismatch_escalates():
     chunk = _make_chunk("s1", "25 lbs")
     result = run(ctx, [chunk])
     assert result.has_conflict is False
-    assert result.escalate_reason is not None
+    assert result.escalate_reason == "unit_label_mismatch"
 
 def test_range_claim_unit_unitless_mismatch_escalates():
     from groundguard.tiers.tier25_preprocessing import run
@@ -1490,5 +1494,22 @@ def test_range_claim_unit_unitless_mismatch_escalates():
     chunk = _make_chunk("s1", "25")
     result = run(ctx, [chunk])
     assert result.has_conflict is False
-    assert result.escalate_reason is not None
+    assert result.escalate_reason == "unit_unitless_mismatch"
 
+def test_extract_ranges_em_dash():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("50—60") == [(50.0, 60.0, "50—60")]
+
+def test_extract_ranges_currency_prefix_distribution_lo():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    # Should distribute prefix from lower to upper bound if upper lacks it but has magnitude
+    assert extract_ranges("$10–20M") == [(10000000.0, 20000000.0, "$10–20M")]
+
+def test_extract_ranges_signed_bounds():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("-10 to -5") == [(-10.0, -5.0, "-10 to -5")]
+    assert extract_ranges("-5% to +5%") == [(-5.0, 5.0, "-5% to +5%")]
+
+def test_extract_ranges_scientific_notation():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    assert extract_ranges("1e6 to 2e6") == [(1000000.0, 2000000.0, "1e6 to 2e6")]
