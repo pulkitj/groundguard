@@ -1454,7 +1454,18 @@ def test_range_containment_source_inside_claim_no_conflict():
     assert result.has_conflict is False
     assert result.escalate_reason is None
 
-def test_range_overlap_escalates():
+def test_range_overlap_with_strict_containment_true_conflicts():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30%", "between 25 and 35%")
+    chunk = _make_chunk("s1", "between 25 and 35%")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is True
+    assert result.escalate_reason is None
+
+
+def test_range_overlap_with_strict_containment_false_escalates(monkeypatch):
+    import groundguard.tiers.tier25_preprocessing
+    monkeypatch.setattr(groundguard.tiers.tier25_preprocessing, "RANGE_CONTAINMENT_STRICT", False)
     from groundguard.tiers.tier25_preprocessing import run
     ctx = _make_ctx("between 20 and 30%", "between 25 and 35%")
     chunk = _make_chunk("s1", "between 25 and 35%")
@@ -1532,3 +1543,40 @@ def test_extract_ranges_signed_bounds():
 def test_extract_ranges_scientific_notation():
     from groundguard.tiers.tier25_preprocessing import extract_ranges
     assert extract_ranges("1e6 to 2e6") == [(1000000.0, 2000000.0, "1e6 to 2e6")]
+
+def test_year_conflict_aggregate_across_chunks():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 2023 and 2024", "in 2023 and in 2024")
+    chunk1 = _make_chunk("s1", "in 2023")
+    chunk2 = _make_chunk("s2", "in 2024")
+    result = run(ctx, [chunk1, chunk2])
+    assert result.has_conflict is False
+
+
+def test_range_to_range_unit_mismatch_escalates():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30 kg", "between 22 and 28 lbs")
+    chunk = _make_chunk("s1", "between 22 and 28 lbs")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason == "unit_label_mismatch"
+
+
+def test_range_to_range_unit_unitless_mismatch_escalates():
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("between 20 and 30%", "between 22 and 28")
+    chunk = _make_chunk("s1", "between 22 and 28")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason == "unit_unitless_mismatch"
+
+
+def test_range_currency_prefix_distribution_unit_check():
+    from groundguard.tiers.tier25_preprocessing import run
+    # Claim: "10 to $20" -> both bounds should have currency unit USD
+    # Source: "15" (unitless) -> should trigger unit_unitless_mismatch
+    ctx = _make_ctx("10 to $20", "15")
+    chunk = _make_chunk("s1", "15")
+    result = run(ctx, [chunk])
+    assert result.has_conflict is False
+    assert result.escalate_reason == "unit_unitless_mismatch"
