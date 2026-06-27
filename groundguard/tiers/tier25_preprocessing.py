@@ -492,6 +492,162 @@ def _normalise_number(raw: str) -> float:
     return val
 
 
+def extract_ranges(text: str) -> list[tuple[float, float, str]]:
+    matches_by_start = {}
+    for pattern in _RANGE_PATTERNS:
+        for match in pattern.finditer(text):
+            start = match.start()
+            if start not in matches_by_start:
+                matches_by_start[start] = match
+            else:
+                if len(match.group(0)) > len(matches_by_start[start].group(0)):
+                    matches_by_start[start] = match
+
+    results_with_start = []
+    for start, match in matches_by_start.items():
+        lo_str = match.group(1)
+        hi_str = match.group(2)
+        raw_span = match.group(0)
+
+        # Suffix distribution
+        suffix_pat = re.compile(
+            r'\s*(?:%|percent(?:age)?|bps?|basis\s+points?|[MBKTmbkt](?:illion)?)$',
+            re.IGNORECASE
+        )
+        lo_m = suffix_pat.search(lo_str)
+        hi_m = suffix_pat.search(hi_str)
+        if hi_m and not lo_m:
+            lo_str = lo_str + hi_m.group(0)
+        elif lo_m and not hi_m:
+            hi_str = hi_str + lo_m.group(0)
+
+        # Prefix distribution
+        prefix_pat = re.compile(
+            r'^([$€£¥₹₩₽]|(?:USD|EUR|GBP|JPY|CHF|CAD|AUD|HKD)\b\s*)',
+            re.IGNORECASE
+        )
+        
+        # Inline split_sign_and_rest for lo_str
+        lo_sign = ''
+        lo_rest = lo_str
+        if lo_str.startswith('+') or lo_str.startswith('-'):
+            lo_sign = lo_str[0]
+            lo_rest = lo_str[1:]
+            
+        # Inline split_sign_and_rest for hi_str
+        hi_sign = ''
+        hi_rest = hi_str
+        if hi_str.startswith('+') or hi_str.startswith('-'):
+            hi_sign = hi_str[0]
+            hi_rest = hi_str[1:]
+
+        lo_pref_m = prefix_pat.search(lo_rest)
+        hi_pref_m = prefix_pat.search(hi_rest)
+
+        if hi_pref_m and not lo_pref_m:
+            lo_str = lo_sign + hi_pref_m.group(0) + lo_rest
+        elif lo_pref_m and not hi_pref_m:
+            hi_str = hi_sign + lo_pref_m.group(0) + hi_rest
+
+        # Inline pre_normalise_bound for lo_str
+        lo_norm_str = re.sub(r'\bpercent(?:age)?\b', '%', lo_str, flags=re.IGNORECASE)
+        lo_norm_str = re.sub(r'\bbasis\s+points?\b', 'bps', lo_norm_str, flags=re.IGNORECASE)
+        lo_norm_str = re.sub(r'\bthousand\b', 'k', lo_norm_str, flags=re.IGNORECASE)
+        lo_norm_str = re.sub(r'\bmillion\b', 'm', lo_norm_str, flags=re.IGNORECASE)
+        lo_norm_str = re.sub(r'\bbillion\b', 'b', lo_norm_str, flags=re.IGNORECASE)
+        lo_norm_str = re.sub(r'\btrillion\b', 't', lo_norm_str, flags=re.IGNORECASE)
+
+        # Inline pre_normalise_bound for hi_str
+        hi_norm_str = re.sub(r'\bpercent(?:age)?\b', '%', hi_str, flags=re.IGNORECASE)
+        hi_norm_str = re.sub(r'\bbasis\s+points?\b', 'bps', hi_norm_str, flags=re.IGNORECASE)
+        hi_norm_str = re.sub(r'\bthousand\b', 'k', hi_norm_str, flags=re.IGNORECASE)
+        hi_norm_str = re.sub(r'\bmillion\b', 'm', hi_norm_str, flags=re.IGNORECASE)
+        hi_norm_str = re.sub(r'\bbillion\b', 'b', hi_norm_str, flags=re.IGNORECASE)
+        hi_norm_str = re.sub(r'\btrillion\b', 't', hi_norm_str, flags=re.IGNORECASE)
+
+        try:
+            lo_val = _normalise_number(lo_norm_str)
+            hi_val = _normalise_number(hi_norm_str)
+            results_with_start.append((start, lo_val, hi_val, raw_span))
+        except (ValueError, TypeError):
+            continue
+
+    results_with_start.sort(key=lambda x: x[0])
+    return [(lo, hi, raw) for start, lo, hi, raw in results_with_start]
+
+
+def _determine_range_unit(raw_span: str, text: str, start: int, end: int) -> str | None:
+    suffix = text[end:]
+    suffix_tokens = suffix.split()
+    window_tokens = suffix_tokens[:UNIT_ANCHOR_WINDOW_TOKENS]
+    window_text = " ".join(window_tokens)
+    
+    # Strip any leading hyphens/spaces/punctuation from this window
+    stripped_window = window_text.lstrip("- \t\n\r.,;:!?()'" + '"')
+    
+    # Pass the stripped window text to _extract_unit_anchor
+    unit = _extract_unit_anchor(stripped_window)
+    if unit == "_entity":
+        return None
+    return unit
+
+
+def _standardise_unit(u: str | None) -> str | None:
+    if u is None:
+        return None
+    u_lower = u.lower().strip()
+    if u_lower in ("%", "percent", "percentage"):
+        return "%"
+    if u_lower in ("bps", "bp", "basis point", "basis points"):
+        return "bps"
+    currencies = ("$", "€", "£", "¥", "₹", "₩", "₽", "usd", "eur", "gbp", "jpy", "chf", "cad", "aud", "hkd")
+    for curr in currencies:
+        if u_lower == curr:
+            return curr.upper() if len(curr) > 1 else curr
+    return u_lower
+
+
+def _get_effective_unit(raw: str, parsed_unit: str | None = None) -> str | None:
+    if parsed_unit is not None:
+        std = _standardise_unit(parsed_unit)
+        if std:
+            return std
+
+    raw_lower = raw.lower().strip()
+    suffix_pat = re.compile(
+        r'\s*(?:%|percent(?:age)?|bps?|basis\s+points?)$',
+        re.IGNORECASE
+    )
+    m_sfx = suffix_pat.search(raw_lower)
+    if m_sfx:
+        return _standardise_unit(m_sfx.group(0).strip())
+
+    prefix_pat = re.compile(
+        r'^([$€£¥₹₩₽]|(?:USD|EUR|GBP|JPY|CHF|CAD|AUD|HKD)\b\s*)',
+        re.IGNORECASE
+    )
+    
+    # split sign and rest inline
+    rest = raw
+    if raw.startswith('+') or raw.startswith('-'):
+        rest = raw[1:]
+        
+    m_pref = prefix_pat.search(rest.strip())
+    if m_pref:
+        return _standardise_unit(m_pref.group(1).strip())
+
+    return None
+
+
+def _check_unit_mismatch_custom(claim_unit: str | None, chunk_unit: str | None) -> str | None:
+    if claim_unit is not None and chunk_unit is not None:
+        if claim_unit != chunk_unit:
+            return "unit_label_mismatch"
+    elif (claim_unit is not None) != (chunk_unit is not None):
+        return "unit_unitless_mismatch"
+    return None
+
+
 def _has_sufficient_metric_context(text: str) -> bool:
     """Return True if text has >= 1 substantive (non-stopword) non-digit word."""
     tokens = re.findall(r'\b[a-zA-Z]+\b', text.lower())
@@ -748,11 +904,18 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
             escalate_reason="fraction",
             evidence_bundle=build_evidence_bundle(ctx, chunks),
         )
+        
+    claim_ranges = extract_ranges(claim_text)
+    temp_claim_text = claim_text
+    for lo, hi, raw in claim_ranges:
+        idx = temp_claim_text.find(raw)
+        if idx != -1:
+            temp_claim_text = temp_claim_text[:idx] + (' ' * len(raw)) + temp_claim_text[idx + len(raw):]
+            
+    claim_numbers = _extract_numerical_values(temp_claim_text, is_claim=True)
     
-    claim_numbers = _extract_numerical_values(claim_text, is_claim=True)
-    
-    # If no numbers remain in the claim, return Tier25Result(has_conflict=False).
-    if not claim_numbers:
+    # If no numbers and no ranges remain in the claim, return Tier25Result(has_conflict=False).
+    if not claim_numbers and not claim_ranges:
         return Tier25Result(has_conflict=False, evidence_bundle=build_evidence_bundle(ctx, chunks))
 
     # Guard: insufficient metric context
@@ -765,8 +928,20 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
     # Extract contextual years from claim (using original ctx.claim)
     claim_years = set(extract_contextual_years(ctx.claim))
 
-    # Check for range in claim (two numeric values matching range pattern)
-    is_range_claim = len(claim_floats) >= 2 and any(p.search(ctx.claim) for p in _RANGE_PATTERNS)
+    # Check for range in claim
+    is_range_claim = len(claim_ranges) > 0
+
+    claim_ranges_with_units = []
+    for claim_lo, claim_hi, claim_raw in claim_ranges:
+        idx = claim_text.find(claim_raw)
+        if idx != -1:
+            end_idx = idx + len(claim_raw)
+            raw_unit = _determine_range_unit(claim_raw, claim_text, idx, end_idx)
+            unit = _get_effective_unit(claim_raw, raw_unit)
+            claim_ranges_with_units.append((claim_lo, claim_hi, claim_raw, unit))
+        else:
+            unit = _get_effective_unit(claim_raw)
+            claim_ranges_with_units.append((claim_lo, claim_hi, claim_raw, unit))
 
     checks = []
     conflict_found = False
@@ -774,7 +949,7 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
     evidence_bundle = build_evidence_bundle(ctx, chunks)
 
     # Year conflict check loop: aggregate across all chunks first
-    all_source_years: set[str] = set()
+    all_source_years = set()
     for chunk in chunks:
         all_source_years.update(extract_contextual_years(chunk.text_content))
 
@@ -801,6 +976,10 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
         if num.value not in claim_year_floats
     ]
     matched_claim_keys = set()
+    
+    def is_year_val(val: float) -> bool:
+        return val in claim_year_floats or (1900.0 <= val <= 2100.0 and val.is_integer())
+
     for chunk in chunks:
         # Preprocess chunk
         chunk_text = chunk.text_content
@@ -808,58 +987,136 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
         chunk_text = normalize_accounting_negatives(chunk_text)
         chunk_text = normalize_eu_numbers(chunk_text)
         
-        chunk_numbers = _extract_numerical_values(chunk_text, is_claim=False)
-        chunk_floats = [num.value for num, _, _ in chunk_numbers]
-
-        # For each claim number, check against chunk numbers
-        # Skip year values — they are exclusively handled by the year conflict loop above.
-        for claim_num, claim_raw, claim_start in non_year_claim_numbers:
-            claim_float = claim_num.value
-
-            if is_range_claim:
-                # Range claim: check if any chunk value falls within range
-                for chunk_num, chunk_raw, chunk_start in chunk_numbers:
-                    chunk_float = chunk_num.value
-                    
-                    # Check unit mismatch with each claim number
-                    for c_num, c_raw, _ in claim_numbers:
-                        if c_num.value in claim_year_floats:
-                            continue
-                        mismatch = _check_unit_mismatch(c_num, chunk_num)
-                        if mismatch:
-                            return Tier25Result(
-                                has_conflict=False,
-                                escalate_reason=mismatch,
-                                evidence_bundle=evidence_bundle,
-                                conflict_citation=conflict_citation,
-                                numerical_checks=checks,
-                            )
-                            
-                    if _is_within_range(chunk_float, claim_floats):
-                        # source value is within claim range — not a conflict
-                        checks.append(NumericalCheckResult(
-                            claim_number=claim_raw,
-                            source_number=str(chunk_float),
-                            match=True,
-                            chunk_id=chunk.chunk_id,
-                        ))
-                        break
+        if is_range_claim:
+            chunk_ranges = extract_ranges(chunk_text)
+            temp_chunk_text = chunk_text
+            for lo, hi, raw in chunk_ranges:
+                idx = temp_chunk_text.find(raw)
+                if idx != -1:
+                    temp_chunk_text = temp_chunk_text[:idx] + (' ' * len(raw)) + temp_chunk_text[idx + len(raw):]
+            
+            chunk_numbers = _extract_numerical_values(temp_chunk_text, is_claim=False)
+            
+            chunk_ranges_with_units = []
+            for chunk_lo, chunk_hi, chunk_raw in chunk_ranges:
+                idx = chunk_text.find(chunk_raw)
+                if idx != -1:
+                    end_idx = idx + len(chunk_raw)
+                    raw_unit = _determine_range_unit(chunk_raw, chunk_text, idx, end_idx)
+                    unit = _get_effective_unit(chunk_raw, raw_unit)
+                    chunk_ranges_with_units.append((chunk_lo, chunk_hi, chunk_raw, unit))
                 else:
-                    # No chunk value within range
-                    if chunk_floats:
-                        first_chunk_raw = chunk_numbers[0][1] if chunk_numbers else ""
-                        checks.append(NumericalCheckResult(
-                            claim_number=claim_raw,
-                            source_number=first_chunk_raw,
-                            match=False,
-                            chunk_id=chunk.chunk_id,
-                        ))
-                break  # only check range once per chunk
-            else:
-                # Exact match check / Hedge modifier tolerance check
+                    unit = _get_effective_unit(chunk_raw)
+                    chunk_ranges_with_units.append((chunk_lo, chunk_hi, chunk_raw, unit))
+            
+            chunk_numbers_with_units = []
+            for chunk_num, chunk_raw, chunk_start in chunk_numbers:
+                unit = _get_effective_unit(chunk_raw, chunk_num.unit)
+                chunk_numbers_with_units.append((chunk_num.value, chunk_raw, unit))
+                
+            # Check unit mismatches
+            for claim_lo, claim_hi, claim_raw, claim_unit in claim_ranges_with_units:
+                if is_year_val(claim_lo) and is_year_val(claim_hi):
+                    continue
+                
+                for chunk_lo, chunk_hi, chunk_raw, chunk_unit in chunk_ranges_with_units:
+                    mismatch = _check_unit_mismatch_custom(claim_unit, chunk_unit)
+                    if mismatch:
+                        return Tier25Result(
+                            has_conflict=False,
+                            escalate_reason=mismatch,
+                            evidence_bundle=evidence_bundle,
+                            conflict_citation=conflict_citation,
+                            numerical_checks=checks,
+                        )
+                for chunk_val, chunk_raw, chunk_unit in chunk_numbers_with_units:
+                    mismatch = _check_unit_mismatch_custom(claim_unit, chunk_unit)
+                    if mismatch:
+                        return Tier25Result(
+                            has_conflict=False,
+                            escalate_reason=mismatch,
+                            evidence_bundle=evidence_bundle,
+                            conflict_citation=conflict_citation,
+                            numerical_checks=checks,
+                        )
+            
+            # Check if chunk has no ranges and no numbers; if so, escalate
+            if not chunk_ranges_with_units and not chunk_numbers_with_units:
+                return Tier25Result(
+                    has_conflict=False,
+                    escalate_reason="no_source_numbers",
+                    evidence_bundle=evidence_bundle,
+                    conflict_citation=conflict_citation,
+                    numerical_checks=checks,
+                )
+                
+            sources_to_compare = []
+            for src_lo, src_hi, src_raw, _ in chunk_ranges_with_units:
+                sources_to_compare.append((src_lo, src_hi, src_raw))
+            for src_val, src_raw, _ in chunk_numbers_with_units:
+                sources_to_compare.append((src_val, src_val, src_raw))
+                
+            for claim_lo, claim_hi, claim_raw, claim_unit in claim_ranges_with_units:
+                if is_year_val(claim_lo) and is_year_val(claim_hi):
+                    continue
+                
+                found_match = False
+                found_overlap = False
+                best_src_raw = None
+                
+                for src_lo, src_hi, src_raw in sources_to_compare:
+                    if claim_lo <= src_lo and src_hi <= claim_hi:
+                        found_match = True
+                        best_src_raw = src_raw
+                        break
+                    elif not RANGE_CONTAINMENT_STRICT:
+                        if max(claim_lo, src_lo) <= min(claim_hi, src_hi):
+                            found_overlap = True
+                            best_src_raw = src_raw
+                
+                if found_match:
+                    checks.append(NumericalCheckResult(
+                        claim_number=claim_raw,
+                        source_number=best_src_raw,
+                        match=True,
+                        chunk_id=chunk.chunk_id,
+                    ))
+                elif found_overlap:
+                    return Tier25Result(
+                        has_conflict=False,
+                        escalate_reason="range_overlap",
+                        evidence_bundle=evidence_bundle,
+                        conflict_citation=conflict_citation,
+                        numerical_checks=checks,
+                    )
+                else:
+                    first_src_raw = sources_to_compare[0][2] if sources_to_compare else ""
+                    checks.append(NumericalCheckResult(
+                        claim_number=claim_raw,
+                        source_number=first_src_raw,
+                        match=False,
+                        chunk_id=chunk.chunk_id,
+                    ))
+                    if first_src_raw and conflict_citation is None:
+                        excerpt_result = extract_excerpt_from_chunk(chunk, re.escape(first_src_raw))
+                        if excerpt_result:
+                            excerpt_text, start, end = excerpt_result
+                            conflict_citation = Citation(
+                                source_id=chunk.source_id,
+                                excerpt=excerpt_text,
+                                excerpt_char_start=chunk.char_start + start,
+                                excerpt_char_end=chunk.char_start + end,
+                            )
+        else:
+            # Non-range claim check
+            chunk_numbers = _extract_numerical_values(chunk_text, is_claim=False)
+            chunk_floats = [num.value for num, _, _ in chunk_numbers]
+            
+            for claim_num, claim_raw, claim_start in non_year_claim_numbers:
+                claim_float = claim_num.value
                 hedge = detect_hedge(claim_text, claim_start)
                 matching_num_info = None
-                for chunk_num, chunk_raw, chunk_start in chunk_numbers:
+                for chunk_num, chunk_raw, chunk_start_val in chunk_numbers:
                     is_match = False
                     if hedge == "approx":
                         if claim_float == 0.0:
@@ -877,11 +1134,8 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                         break
 
                 if chunk_floats and matching_num_info is None:
-                    # Only flag when source has exactly one number: ambiguous arithmetic
-                    # context (≥2 source values) passes to Tier 3 for LLM reasoning.
                     if len(chunk_floats) > 1 and len(non_year_claim_numbers) <= 1:
                         continue
-                    # Mismatch found
                     chunk_num, chunk_raw, _ = chunk_numbers[0]
                     mismatch = _check_unit_mismatch(claim_num, chunk_num)
                     if mismatch:
@@ -898,7 +1152,6 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                         match=False,
                         chunk_id=chunk.chunk_id,
                     ))
-                    # Build citation pointing to the conflicting value in chunk
                     if chunk_raw and conflict_citation is None:
                         excerpt_result = extract_excerpt_from_chunk(chunk, re.escape(chunk_raw))
                         if excerpt_result:
@@ -938,14 +1191,8 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                 if conflict_citation is not None:
                     conflict_found = True
 
-    # For range claim: conflict if NO chunk value falls within the range
-    # Only run if no conflict was already found (e.g. by the year check)
-    if is_range_claim and not conflict_found:
-        within_range_matches = [c for c in checks if c.match]
-        if within_range_matches:
-            conflict_found = False
-        elif checks:
-            conflict_found = True
+    if is_range_claim:
+        conflict_found = any(not c.match for c in checks) or conflict_found
 
     return Tier25Result(
         has_conflict=conflict_found,
