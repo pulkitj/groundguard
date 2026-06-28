@@ -230,7 +230,7 @@ _NUMBER_PATTERN = re.compile(
 _BOUND = (
     r'[+\-]?'
     r'(?:[$€£¥₹₩₽]|(?:USD|EUR|GBP|JPY|CHF|CAD|AUD|HKD)\s*)?'
-    r'(?:\d+(?:,\d{3})*(?:\.\d+)?(?:[eE][+\-]?\d+)?|\.\d+)'
+    r'(?:\d+(?:,\d{3})*(?:\.\d+)?(?:[eE][+\-]?\d+)?|\.\d+)(?!\.\d|\d)'
     r'(?:\s*(?:[MBKTmbkt](?:illion)?|bps?|basis\s+points?|%|percent(?:age)?))?'
 )
 _RANGE_PATTERNS = [
@@ -622,16 +622,10 @@ def _get_effective_unit(raw: str, parsed_unit: str | None = None) -> str | None:
         return _standardise_unit(m_sfx.group(0).strip())
 
     prefix_pat = re.compile(
-        r'^([$€£¥₹₩₽]|(?:USD|EUR|GBP|JPY|CHF|CAD|AUD|HKD)\b\s*)',
+        r'([$€£¥₹₩₽]|(?:USD|EUR|GBP|JPY|CHF|CAD|AUD|HKD)\b)',
         re.IGNORECASE
     )
-    
-    # split sign and rest inline
-    rest = raw
-    if raw.startswith('+') or raw.startswith('-'):
-        rest = raw[1:]
-        
-    m_pref = prefix_pat.search(rest.strip())
+    m_pref = prefix_pat.search(raw)
     if m_pref:
         return _standardise_unit(m_pref.group(1).strip())
 
@@ -914,9 +908,6 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
     if not claim_numbers and not claim_ranges:
         return Tier25Result(has_conflict=False, evidence_bundle=build_evidence_bundle(ctx, chunks))
 
-    if not _has_sufficient_metric_context(ctx.claim):
-        return Tier25Result(has_conflict=False, evidence_bundle=build_evidence_bundle(ctx, chunks))
-    
     claim_floats = [num.value for num, _, _ in claim_numbers]
     claim_years = set(extract_contextual_years(ctx.claim))
     claim_year_floats = {float(y) for y in claim_years}
@@ -932,6 +923,13 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
         else:
             unit = _get_effective_unit(claim_raw)
             claim_ranges_with_units.append((claim_lo, claim_hi, claim_raw, unit))
+
+    has_explicit_unit = (
+        any(u is not None for _, _, _, u in claim_ranges_with_units) or
+        any(_get_effective_unit(raw, num.unit) is not None for num, raw, _ in claim_numbers)
+    )
+    if not has_explicit_unit and not _has_sufficient_metric_context(ctx.claim):
+        return Tier25Result(has_conflict=False, evidence_bundle=build_evidence_bundle(ctx, chunks))
 
     checks = []
     conflict_found = False
@@ -1005,63 +1003,6 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
             
         chunks_data.append((chunk, chunk_ranges_with_units, chunk_numbers_with_units))
 
-    # Check unit mismatches across all chunks
-    for chunk, chunk_ranges_with_units, chunk_numbers_with_units in chunks_data:
-        for claim_lo, claim_hi, claim_raw, claim_unit in claim_ranges_with_units:
-            if is_year_val(claim_lo) and is_year_val(claim_hi):
-                continue
-            for chunk_lo, chunk_hi, chunk_raw, chunk_unit in chunk_ranges_with_units:
-                if is_year_val(chunk_lo) and is_year_val(chunk_hi):
-                    continue
-                mismatch = _check_unit_mismatch_custom(claim_unit, chunk_unit)
-                if mismatch:
-                    return Tier25Result(
-                        has_conflict=False,
-                        escalate_reason=mismatch,
-                        evidence_bundle=evidence_bundle,
-                        conflict_citation=conflict_citation,
-                        numerical_checks=checks,
-                    )
-            for chunk_val, chunk_raw, chunk_unit in chunk_numbers_with_units:
-                if is_year_val(chunk_val):
-                    continue
-                mismatch = _check_unit_mismatch_custom(claim_unit, chunk_unit)
-                if mismatch:
-                    return Tier25Result(
-                        has_conflict=False,
-                        escalate_reason=mismatch,
-                        evidence_bundle=evidence_bundle,
-                        conflict_citation=conflict_citation,
-                        numerical_checks=checks,
-                    )
-        
-        for claim_num, claim_raw, claim_start in non_year_claim_numbers:
-            claim_unit = _get_effective_unit(claim_raw, claim_num.unit)
-            for chunk_lo, chunk_hi, chunk_raw, chunk_unit in chunk_ranges_with_units:
-                if is_year_val(chunk_lo) and is_year_val(chunk_hi):
-                    continue
-                mismatch = _check_unit_mismatch_custom(claim_unit, chunk_unit)
-                if mismatch:
-                    return Tier25Result(
-                        has_conflict=False,
-                        escalate_reason=mismatch,
-                        evidence_bundle=evidence_bundle,
-                        conflict_citation=conflict_citation,
-                        numerical_checks=checks,
-                    )
-            for chunk_val, chunk_raw, chunk_unit in chunk_numbers_with_units:
-                if is_year_val(chunk_val):
-                    continue
-                mismatch = _check_unit_mismatch_custom(claim_unit, chunk_unit)
-                if mismatch:
-                    return Tier25Result(
-                        has_conflict=False,
-                        escalate_reason=mismatch,
-                        evidence_bundle=evidence_bundle,
-                        conflict_citation=conflict_citation,
-                        numerical_checks=checks,
-                    )
-
     # Check if all chunks have no numbers and no ranges
     if not has_any_source_numeric:
         has_non_year_claim = False
@@ -1082,14 +1023,19 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
 
     claim_range_matched = {}
     claim_range_escalated = {}
+    claim_range_mismatch_reasons = {}
+    claim_range_has_mismatching_chunk = {}
     for claim_lo, claim_hi, claim_raw, claim_unit in claim_ranges_with_units:
         if is_year_val(claim_lo) and is_year_val(claim_hi):
             continue
         claim_range_matched[claim_raw] = False
         claim_range_escalated[claim_raw] = False
+        claim_range_mismatch_reasons[claim_raw] = set()
+        claim_range_has_mismatching_chunk[claim_raw] = False
         
     claim_number_matched = {start: False for _, _, start in non_year_claim_numbers}
     claim_number_has_mismatching_chunk = {start: False for _, _, start in non_year_claim_numbers}
+    claim_number_mismatch_reasons = {start: set() for _, _, start in non_year_claim_numbers}
 
     for chunk, chunk_ranges_with_units, chunk_numbers_with_units in chunks_data:
         # Compare ranges
@@ -1097,26 +1043,12 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
             if is_year_val(claim_lo) and is_year_val(claim_hi):
                 continue
             
-            # Check range-to-range
-            for src_lo, src_hi, src_raw, _ in chunk_ranges_with_units:
+            # 1. Check for exact match in value and unit
+            match_found = False
+            for src_lo, src_hi, src_raw, src_unit in chunk_ranges_with_units:
                 if claim_lo <= src_lo and src_hi <= claim_hi:
-                    claim_range_matched[claim_raw] = True
-                    checks.append(NumericalCheckResult(
-                        claim_number=claim_raw,
-                        source_number=src_raw,
-                        match=True,
-                        chunk_id=chunk.chunk_id,
-                    ))
-                    break
-                else:
-                    overlaps = max(claim_lo, src_lo) <= min(claim_hi, src_hi)
-                    if overlaps and not RANGE_CONTAINMENT_STRICT:
-                        claim_range_escalated[claim_raw] = True
-            
-            # Check range-to-single
-            if not claim_range_matched[claim_raw]:
-                for src_val, src_raw, _ in chunk_numbers_with_units:
-                    if claim_lo <= src_val and src_val <= claim_hi:
+                    mismatch = _check_unit_mismatch_custom(claim_unit, src_unit)
+                    if mismatch is None:
                         claim_range_matched[claim_raw] = True
                         checks.append(NumericalCheckResult(
                             claim_number=claim_raw,
@@ -1124,16 +1056,81 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                             match=True,
                             chunk_id=chunk.chunk_id,
                         ))
+                        match_found = True
                         break
+            
+            if not match_found:
+                for src_val, src_raw, src_unit in chunk_numbers_with_units:
+                    if claim_lo <= src_val and src_val <= claim_hi:
+                        mismatch = _check_unit_mismatch_custom(claim_unit, src_unit)
+                        if mismatch is None:
+                            claim_range_matched[claim_raw] = True
+                            checks.append(NumericalCheckResult(
+                                claim_number=claim_raw,
+                                source_number=src_raw,
+                                match=True,
+                                chunk_id=chunk.chunk_id,
+                            ))
+                            match_found = True
+                            break
+            
+            if match_found:
+                continue
+
+            # 2. Check for value-matching unit mismatches
+            mismatch_found = False
+            for src_lo, src_hi, src_raw, src_unit in chunk_ranges_with_units:
+                if claim_lo <= src_lo and src_hi <= claim_hi:
+                    mismatch = _check_unit_mismatch_custom(claim_unit, src_unit)
+                    if mismatch is not None:
+                        claim_range_mismatch_reasons[claim_raw].add(mismatch)
+                        mismatch_found = True
+            
+            for src_val, src_raw, src_unit in chunk_numbers_with_units:
+                if claim_lo <= src_val and src_val <= claim_hi:
+                    mismatch = _check_unit_mismatch_custom(claim_unit, src_unit)
+                    if mismatch is not None:
+                        claim_range_mismatch_reasons[claim_raw].add(mismatch)
+                        mismatch_found = True
+            
+            if mismatch_found:
+                continue
+
+            # 3. Check for range overlaps (under matching units)
+            for src_lo, src_hi, src_raw, src_unit in chunk_ranges_with_units:
+                mismatch = _check_unit_mismatch_custom(claim_unit, src_unit)
+                if mismatch is None:
+                    overlaps = max(claim_lo, src_lo) <= min(claim_hi, src_hi)
+                    if overlaps:
+                        is_superset = (src_lo <= claim_lo and claim_hi <= src_hi)
+                        if is_superset or not RANGE_CONTAINMENT_STRICT:
+                            claim_range_escalated[claim_raw] = True
+
+            # 4. Fallback conflict check
+            if not claim_range_matched[claim_raw] and not claim_range_escalated[claim_raw]:
+                if chunk_ranges_with_units or chunk_numbers_with_units:
+                    if chunk_ranges_with_units:
+                        rep_unit = chunk_ranges_with_units[0][3]
+                    else:
+                        rep_unit = chunk_numbers_with_units[0][2]
+                    
+                    mismatch = _check_unit_mismatch_custom(claim_unit, rep_unit)
+                    if mismatch is not None:
+                        claim_range_mismatch_reasons[claim_raw].add(mismatch)
+                    else:
+                        claim_range_has_mismatching_chunk[claim_raw] = True
                         
         # Compare numbers
         chunk_floats = [val for val, _, _ in chunk_numbers_with_units]
         for claim_num, claim_raw, claim_start in non_year_claim_numbers:
             claim_float = claim_num.value
+            claim_unit = _get_effective_unit(claim_raw, claim_num.unit)
             hedge = detect_hedge(claim_text, claim_start)
             
             matching_num_info = None
-            for chunk_val, chunk_raw, _ in chunk_numbers_with_units:
+            for chunk_val, chunk_raw, chunk_unit in chunk_numbers_with_units:
+                if is_year_val(chunk_val):
+                    continue
                 is_match = False
                 if hedge == 'approx':
                     if claim_float == 0.0:
@@ -1147,8 +1144,12 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                 else:
                     is_match = chunk_val == claim_float
                 if is_match:
-                    matching_num_info = chunk_raw
-                    break
+                    mismatch = _check_unit_mismatch_custom(claim_unit, chunk_unit)
+                    if mismatch:
+                        claim_number_mismatch_reasons[claim_start].add(mismatch)
+                    else:
+                        matching_num_info = chunk_raw
+                        break
                     
             if matching_num_info is not None:
                 claim_number_matched[claim_start] = True
@@ -1162,22 +1163,19 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                 if chunk_numbers_with_units:
                     is_skip = (len(chunk_floats) > 1 and len(non_year_claim_numbers) <= 1)
                     if not is_skip:
-                        claim_number_has_mismatching_chunk[claim_start] = True
+                        rep_val, rep_raw, rep_unit = chunk_numbers_with_units[0]
+                        mismatch = _check_unit_mismatch_custom(claim_unit, rep_unit)
+                        if mismatch:
+                            claim_number_mismatch_reasons[claim_start].add(mismatch)
+                        else:
+                            claim_number_has_mismatching_chunk[claim_start] = True
 
     # Evaluate final match results
     for claim_lo, claim_hi, claim_raw, claim_unit in claim_ranges_with_units:
         if is_year_val(claim_lo) and is_year_val(claim_hi):
             continue
         if not claim_range_matched[claim_raw]:
-            if claim_range_escalated[claim_raw]:
-                return Tier25Result(
-                    has_conflict=False,
-                    escalate_reason='range_overlap',
-                    evidence_bundle=evidence_bundle,
-                    conflict_citation=conflict_citation,
-                    numerical_checks=checks,
-                )
-            else:
+            if claim_range_has_mismatching_chunk[claim_raw]:
                 first_src_raw = ''
                 for _, chunk_ranges_with_units, chunk_numbers_with_units in chunks_data:
                     if chunk_ranges_with_units:
@@ -1207,6 +1205,23 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                                 excerpt_char_end=chunk.char_start + end,
                             )
                             break
+            elif claim_range_mismatch_reasons[claim_raw]:
+                mismatch = list(claim_range_mismatch_reasons[claim_raw])[0]
+                return Tier25Result(
+                    has_conflict=False,
+                    escalate_reason=mismatch,
+                    evidence_bundle=evidence_bundle,
+                    conflict_citation=conflict_citation,
+                    numerical_checks=checks,
+                )
+            elif claim_range_escalated[claim_raw]:
+                return Tier25Result(
+                    has_conflict=False,
+                    escalate_reason='range_overlap',
+                    evidence_bundle=evidence_bundle,
+                    conflict_citation=conflict_citation,
+                    numerical_checks=checks,
+                )
 
     for claim_num, claim_raw, claim_start in non_year_claim_numbers:
         if not claim_number_matched[claim_start]:
@@ -1240,6 +1255,15 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                                 excerpt_char_end=chunk.char_start + end,
                             )
                             break
+            elif claim_number_mismatch_reasons[claim_start]:
+                mismatch = list(claim_number_mismatch_reasons[claim_start])[0]
+                return Tier25Result(
+                    has_conflict=False,
+                    escalate_reason=mismatch,
+                    evidence_bundle=evidence_bundle,
+                    conflict_citation=conflict_citation,
+                    numerical_checks=checks,
+                )
 
     return Tier25Result(
         has_conflict=conflict_found,
