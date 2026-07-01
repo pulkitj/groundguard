@@ -442,6 +442,17 @@ def normalize_accounting_negatives(text: str) -> str:
 _EU_NUMBER_PATTERN = re.compile(r'\b\d{1,3}(?:\.\d{3})+,\d+\b')
 _EU_UNGROUPED_DECIMAL_RE = re.compile(r'\b(\d+),(\d{2})\b(?!,\d)')
 
+# EU integer ambiguity: 1–3 non-zero leading digits + exactly 3 decimal digits, no comma.
+# "1.234" is ambiguous: could be US decimal 1.234 or EU grouping integer 1234.
+_EU_INTEGER_AMBIGUOUS_RE = re.compile(r'^[1-9]\d{0,2}\.\d{3}$')
+
+
+def _is_eu_integer_ambiguous(raw: str) -> bool:
+    """Return True if raw (after stripping sign/currency/suffix) looks like EU integer notation."""
+    if ',' in raw:
+        return False
+    return bool(_EU_INTEGER_AMBIGUOUS_RE.match(raw.strip()))
+
 
 def normalize_eu_numbers(text: str) -> str:
     """Normalize European formatted numbers (1.234,56 -> 1234.56)."""
@@ -1011,7 +1022,25 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
             temp_claim_text = temp_claim_text[:idx] + (' ' * len(raw)) + temp_claim_text[idx + len(raw):]
             
     claim_numbers = _extract_numerical_values(temp_claim_text, is_claim=True)
-    
+
+    # EU integer ambiguity check — escalate if any claim number is ambiguous
+    for _num, _raw, _start in claim_numbers:
+        # Strip sign and currency from raw to get the bare numeric string
+        _bare = _raw.strip().lstrip('+-').lstrip('$€£¥₹₩₽')
+        # Strip ISO currency codes
+        for _iso in ('USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'HKD'):
+            if _bare.upper().startswith(_iso):
+                _bare = _bare[len(_iso):].strip()
+                break
+        # Strip magnitude suffix if present
+        _bare = re.sub(r'\s*[MBKTmbkt](?:illion)?$', '', _bare, flags=re.IGNORECASE).strip()
+        if _is_eu_integer_ambiguous(_bare):
+            return Tier25Result(
+                has_conflict=False,
+                escalate_reason="eu_integer_ambiguous",
+                evidence_bundle=build_evidence_bundle(ctx, chunks),
+            )
+
     if not claim_numbers and not claim_ranges:
         return Tier25Result(has_conflict=False, evidence_bundle=build_evidence_bundle(ctx, chunks))
 

@@ -1882,3 +1882,36 @@ def test_source_verbal_fraction_contributes_to_comparison():
     chunk = _make_chunk("s1", "two-thirds of patients recovered")
     result = run(ctx, [chunk])
     assert not result.has_conflict
+
+
+def test_eu_integer_ambiguous_helper_true():
+    from groundguard.tiers.tier25_preprocessing import _is_eu_integer_ambiguous
+    assert _is_eu_integer_ambiguous("1.234") is True
+    assert _is_eu_integer_ambiguous("12.345") is True
+    assert _is_eu_integer_ambiguous("123.456") is True
+
+
+def test_eu_integer_ambiguous_helper_false_for_clear_decimals():
+    from groundguard.tiers.tier25_preprocessing import _is_eu_integer_ambiguous
+    assert _is_eu_integer_ambiguous("0.234") is False   # leading zero → unambiguously US
+    assert _is_eu_integer_ambiguous("1.2345") is False  # 4 decimal digits → not EU integer
+    assert _is_eu_integer_ambiguous("1.23") is False    # 2 decimal digits → not EU integer
+    assert _is_eu_integer_ambiguous("1,234") is False   # comma → already-normalised US
+
+
+def test_eu_integer_ambiguous_claim_escalates():
+    """Claim containing bare ambiguous '1.234' must escalate."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("the ratio was 1.234")
+    chunk = _make_chunk("s1", "the ratio was 1.234")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "eu_integer_ambiguous"
+
+
+def test_non_ambiguous_decimal_does_not_escalate():
+    """0.234 is unambiguously a US decimal; must not trigger eu_integer_ambiguous."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("the share was 0.234 of revenue")
+    chunk = _make_chunk("s1", "the share was 0.234 of revenue")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason != "eu_integer_ambiguous"
