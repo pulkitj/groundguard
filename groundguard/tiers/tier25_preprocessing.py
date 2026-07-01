@@ -1244,7 +1244,7 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                 ))
             else:
                 if chunk_numbers_with_units:
-                    is_skip = (len(chunk_floats) > 1 and len(non_year_claim_numbers) <= 1)
+                    is_skip = (len(chunk_floats) > MULTI_NUMBER_SKIP_THRESHOLD and len(non_year_claim_numbers) <= 1)
                     if not is_skip:
                         rep_val, rep_raw, rep_unit = chunk_numbers_with_units[0]
                         mismatch = _check_unit_mismatch_custom(claim_unit, rep_unit)
