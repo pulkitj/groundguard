@@ -1818,3 +1818,39 @@ def test_extract_unit_anchor_per_always_returns_bare_per():
     assert _extract_unit_anchor("per share") == "per"
     assert _extract_unit_anchor("per day") == "per"
     assert _extract_unit_anchor("per") == "per"
+
+
+def test_verbal_fraction_with_entity_noun_does_not_escalate():
+    """Claim 'two-thirds of patients recovered' should NOT escalate — entity noun present."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("two-thirds of patients recovered")
+    chunk = _make_chunk("s1", "0.667 of patients recovered")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason != "fraction", (
+        "Verbal fraction followed by entity noun must fast-accept, not escalate"
+    )
+
+
+def test_verbal_fraction_without_entity_noun_escalates():
+    """Claim 'one-third completed' should escalate — no entity noun."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("one-third completed")
+    chunk = _make_chunk("s1", "some tasks completed")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "fraction"
+
+
+def test_extract_verbal_fractions_source_basic():
+    """Source text verbal fractions are normalised to floats."""
+    from groundguard.tiers.tier25_preprocessing import _extract_verbal_fractions_source
+    results = _extract_verbal_fractions_source("two-thirds of the budget was spent")
+    assert any(abs(v - 0.667) < 0.001 for v, _ in results)
+
+
+def test_source_verbal_fraction_contributes_to_comparison():
+    """Claim '0.667 of patients' vs source 'two-thirds of patients' — no conflict."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("0.667 of patients recovered")
+    chunk = _make_chunk("s1", "two-thirds of patients recovered")
+    result = run(ctx, [chunk])
+    assert not result.has_conflict

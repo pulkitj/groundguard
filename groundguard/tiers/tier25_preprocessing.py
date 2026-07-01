@@ -196,6 +196,21 @@ _VERBAL_FRACTIONS = {
     "one-tenth": 0.1,
 }
 
+def _extract_verbal_fractions_source(text: str) -> list[tuple[float, str]]:
+    """Extract verbal fractions from source text and return (decimal_value, raw_span) pairs."""
+    results = []
+    # Sort longest-first so "three-quarters" matches before "quarter"
+    sorted_fracs = sorted(_VERBAL_FRACTIONS.items(), key=lambda x: -len(x[0]))
+    marked = text
+    for vf, val in sorted_fracs:
+        for m in re.finditer(r'\b' + re.escape(vf) + r'\b', marked, re.IGNORECASE):
+            if '\x00' in marked[m.start():m.end()]:
+                continue
+            results.append((val, m.group(0)))
+            marked = marked[:m.start()] + '\x00' * len(m.group(0)) + marked[m.end():]
+    return results
+
+
 _HEDGE_LOWER = {
     "at least", "more than", "over", "above", "exceeding",
     "greater than", "no fewer than", "no less than",
@@ -885,18 +900,22 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
     claim_text = normalize_accounting_negatives(claim_text)
     claim_text = normalize_eu_numbers(claim_text)
     
-    # Check verbal fractions
-    has_verbal_fraction = False
-    for vf in _VERBAL_FRACTIONS:
-        if re.search(r"\b" + re.escape(vf) + r"\b", ctx.claim, re.IGNORECASE):
-            has_verbal_fraction = True
-            break
-    if has_verbal_fraction:
-        return Tier25Result(
-            has_conflict=False,
-            escalate_reason="fraction",
-            evidence_bundle=build_evidence_bundle(ctx, chunks),
-        )
+    # Check verbal fractions — escalate only when no entity noun follows
+    for vf in sorted(_VERBAL_FRACTIONS.keys(), key=len, reverse=True):
+        for m in re.finditer(r'\b' + re.escape(vf) + r'\b', claim_text, re.IGNORECASE):
+            end_offset = m.end()
+            suffix_tokens = claim_text[end_offset:].split()
+            window_text = " ".join(suffix_tokens[:UNIT_ANCHOR_WINDOW_TOKENS])
+            stripped_window = window_text.lstrip("- \t\n\r.,;:!?()'\"")
+            unit = _extract_unit_anchor(stripped_window)
+            if unit is None:
+                # No entity noun or measurable unit after the fraction — escalate
+                return Tier25Result(
+                    has_conflict=False,
+                    escalate_reason="fraction",
+                    evidence_bundle=build_evidence_bundle(ctx, chunks),
+                )
+            # Entity noun present — verbal fraction is factual; fall through
 
     # Early detection of escalation patterns before range/number extraction
     if re.search(_ABBREV_YEAR_RANGE_PATTERN, claim_text):
@@ -1072,7 +1091,12 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
         for chunk_num, chunk_raw, chunk_start in chunk_numbers:
             unit = _get_effective_unit(chunk_raw, chunk_num.unit)
             chunk_numbers_with_units.append((chunk_num.value, chunk_raw, unit))
-            
+
+        # Source-side verbal fractions: normalise to decimals (no escalation)
+        verbal_frac_values = _extract_verbal_fractions_source(chunk_text)
+        for vf_val, vf_raw in verbal_frac_values:
+            chunk_numbers_with_units.append((vf_val, vf_raw, None))
+
         if chunk_ranges_with_units or chunk_numbers_with_units:
             has_any_source_numeric = True
             
