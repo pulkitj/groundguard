@@ -1847,6 +1847,34 @@ def test_extract_verbal_fractions_source_basic():
     assert any(abs(v - 0.667) < 0.001 for v, _ in results)
 
 
+def test_verbal_compound_split_escalates():
+    """'one hundred and fifty thousand jobs' must escalate, not compare as two values."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("one hundred and fifty thousand jobs were created")
+    chunk = _make_chunk("s1", "150,000 jobs were created")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "verbal_compound_split"
+    assert not result.has_conflict
+
+
+def test_verbal_compound_split_two_million_three_hundred_thousand():
+    """'two million three hundred thousand' — another multi-scale split."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("two million three hundred thousand customers")
+    chunk = _make_chunk("s1", "2,300,000 customers")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "verbal_compound_split"
+
+
+def test_two_separate_verbal_numbers_not_adjacent_do_not_escalate():
+    """Two verbal numbers with substantial text between are independent, not compound."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("one million employees in Asia and two million in Europe")
+    chunk = _make_chunk("s1", "1,000,000 employees in Asia and 2,000,000 in Europe")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason != "verbal_compound_split"
+
+
 def test_source_verbal_fraction_contributes_to_comparison():
     """Claim '0.667 of patients' vs source 'two-thirds of patients' — no conflict."""
     from groundguard.tiers.tier25_preprocessing import run
