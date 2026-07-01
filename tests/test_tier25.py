@@ -1611,3 +1611,194 @@ def test_range_to_range_comparison_uses_normalized_bounds():
     result = run(ctx, [chunk])
     assert result.has_conflict is False
     assert result.escalate_reason is None
+
+# T-P6 Tests
+
+
+def test_tier25_result_defaults_to_none_escalate_reason():
+    """Verify that Tier25Result has field escalate_reason that defaults to None."""
+    from groundguard.tiers.tier25_preprocessing import Tier25Result
+    result = Tier25Result(has_conflict=False)
+    assert result.escalate_reason is None
+
+
+def test_tier25_result_custom_escalate_reason_is_preserved():
+    """Verify that Tier25Result preserves a custom escalate_reason string."""
+    from groundguard.tiers.tier25_preprocessing import Tier25Result
+    result = Tier25Result(has_conflict=False, escalate_reason="ratio_times")
+    assert result.escalate_reason == "ratio_times"
+
+
+def test_ratio_times_escalates_on_x_suffix():
+    """Verify that a claim with an 'x' ratio suffix (e.g. '3x') escalates with 'ratio_times'."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("revenue grew 3x", "revenue grew 2x")
+    chunk = _make_chunk("s1", "revenue grew 2x")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "ratio_times"
+
+
+def test_ratio_times_escalates_on_multiplication_sign():
+    """Verify that a claim with a multiplication sign (e.g. '5×') escalates with 'ratio_times'."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("grew 5× faster", "grew 2x faster")
+    chunk = _make_chunk("s1", "grew 2x faster")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "ratio_times"
+
+
+def test_ratio_notation_escalates_on_colon_format():
+    """Verify that a claim with ratio notation (e.g. '2:1') escalates with 'ratio_notation'."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("a 2:1 ratio", "a 3:1 ratio")
+    chunk = _make_chunk("s1", "a 3:1 ratio")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason in ("ratio_notation", "ratio")
+
+
+def test_decade_reference_four_digits_escalates():
+    """Verify that a claim referencing a decade using four digits (e.g. '1980s') escalates."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("in the 1980s", "in the 1970s")
+    chunk = _make_chunk("s1", "in the 1970s")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "decade_reference"
+
+
+def test_decade_reference_two_digits_escalates():
+    """Verify that a claim referencing a decade using two digits (e.g. '90s') escalates."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("the 90s", "the 80s")
+    chunk = _make_chunk("s1", "the 80s")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "decade_reference"
+
+
+def test_score_expression_out_of_escalates():
+    """Verify that a score expression using 'out of' escalates with 'score_expression'."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("an 8 out of 10 rating", "a 9 out of 10 rating")
+    chunk = _make_chunk("s1", "a 9 out of 10 rating")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "score_expression"
+
+
+def test_score_expression_score_of_escalates():
+    """Verify that a score expression using 'score of' escalates with 'score_expression'."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("a score of 74", "a score of 80")
+    chunk = _make_chunk("s1", "a score of 80")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "score_expression"
+
+
+def test_percentage_points_words_escalates():
+    """Verify that a percentage points verbal reference escalates with 'percentage_points'."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("rose 3 percentage points", "rose 3%")
+    chunk = _make_chunk("s1", "rose 3%")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "percentage_points"
+
+
+def test_percentage_points_abbreviation_escalates():
+    """Verify that a percentage points abbreviation 'pp' reference escalates with 'percentage_points'."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("rose 3pp", "rose 3%")
+    chunk = _make_chunk("s1", "rose 3%")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "percentage_points"
+
+
+def test_abbreviated_year_range_hyphen_escalates():
+    """Verify that an abbreviated year range with a hyphen (e.g. '2025-26') escalates."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("revenue in 2025-26", "revenue was $5M")
+    chunk = _make_chunk("s1", "revenue was $5M")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "abbreviated_year_range"
+
+
+def test_abbreviated_year_range_fy_prefix_escalates():
+    """Verify that an abbreviated year range with a 'FY' prefix (e.g. 'FY2024-25') escalates."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("FY2024-25 results", "results for FY2023-24")
+    chunk = _make_chunk("s1", "results for FY2023-24")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "abbreviated_year_range"
+
+
+def test_bare_fraction_without_entity_noun_escalates():
+    """Verify that a bare fraction without an adjacent entity noun escalates."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("1/3 completed", "0.33 completed")
+    chunk = _make_chunk("s1", "0.33 completed")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason in ("fraction", "bare_fraction")
+
+
+def test_fraction_with_entity_noun_does_not_escalate():
+    """Verify that a fraction with an adjacent entity noun (e.g. '1/3 of patients') does not escalate."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("1/3 of patients recovered", "1/3 of patients recovered")
+    chunk = _make_chunk("s1", "1/3 of patients recovered")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason is None
+
+
+def test_combined_multiple_escalation_conditions_escalates():
+    """Test combined escalation conditions: multiple patterns in one claim must escalate."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("revenue grew 3x in the 1980s", "revenue grew in 1985")
+    chunk = _make_chunk("s1", "revenue grew in 1985")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason in ("ratio_times", "decade_reference")
+
+
+def test_non_escalating_plain_number_returns_none():
+    """Verify that a plain number claim without escalation triggers does not escalate."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("revenue grew 3 percent", "revenue grew 3 percent")
+    chunk = _make_chunk("s1", "revenue grew 3 percent")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason is None
+
+
+def test_tier25_preprocessing_run_with_empty_claim_returns_no_conflict_and_none_escalate():
+    """Verify that running pre-processing with an empty claim returns no conflict and no escalation."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("", "revenue grew 3 percent")
+    chunk = _make_chunk("s1", "revenue grew 3 percent")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason is None
+
+
+def test_t2_routing_with_escalate_reason_forces_llm_route():
+    """Verify that a non-None escalate_reason in Tier25Result forces LLM routing in route_claim."""
+    from groundguard.tiers.tier2_semantic import route_claim
+    from groundguard.tiers.tier25_preprocessing import Tier25Result
+    from groundguard.models.internal import RoutingDecision, VerificationContext
+    from groundguard.models.result import Source
+    from groundguard.loaders.chunker import Chunk
+
+    noise_sources = [
+        Source(content="unrelated weather forecast for tomorrow", source_id=f"noise{i}")
+        for i in range(4)
+    ]
+    target_source = Source(content="revenue grew thirty percent quarterly", source_id="s1")
+    ctx = VerificationContext(
+        claim="revenue grew thirty percent quarterly",
+        original_sources=[target_source] + noise_sources,
+        model="gpt-4o-mini",
+    )
+    chunks = [
+        Chunk(source_id="s1", text_content="revenue grew thirty percent quarterly", char_start=0, char_end=36),
+        *[
+            Chunk(source_id=f"noise{i}", text_content="unrelated weather forecast for tomorrow", char_start=0, char_end=39)
+            for i in range(4)
+        ],
+    ]
+
+    t25_res = Tier25Result(has_conflict=False, escalate_reason="ratio_times")
+    res_escalated = route_claim(ctx, chunks, tier25_result=t25_res)
+    assert res_escalated.decision == RoutingDecision.ESCALATE_TO_LLM
