@@ -849,6 +849,11 @@ def _extract_numerical_values(preprocessed_text: str, is_claim: bool) -> list[tu
             break
         num = float(match.group(1))
         den = float(match.group(2))
+        if den == 0:
+            raw_span = match.group(0)
+            start, end = match.span()
+            modified_text = modified_text[:start] + (' ' * len(raw_span)) + modified_text[end:]
+            continue
         val = round(num / den, 3)
         raw_span = match.group(0)
         start, end = match.span()

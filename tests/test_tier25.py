@@ -1938,3 +1938,95 @@ def test_extract_ranges_still_works_for_normal_ranges_after_masking():
     lo, hi, raw = result[0]
     assert lo == 10.0
     assert hi == 20.0
+
+
+# Group A: Verbal scale extraction (no-digit verbal prefix via _VERBAL_SCALE_PATTERN)
+
+def test_extract_composite_verbal_scale_a_million():
+    """'a million' (no digit prefix) is extracted via _VERBAL_SCALE_PATTERN."""
+    from groundguard.tiers.tier25_preprocessing import extract_composite_numbers
+    results, modified = extract_composite_numbers("a million jobs were created")
+    assert any(abs(v - 1_000_000.0) < 1 for v, _ in results), f"Got: {results}"
+
+
+def test_extract_composite_verbal_scale_half_a_billion():
+    """'half a billion' is extracted as 500_000_000.0."""
+    from groundguard.tiers.tier25_preprocessing import extract_composite_numbers
+    results, modified = extract_composite_numbers("half a billion dollars raised")
+    assert any(abs(v - 500_000_000.0) < 1 for v, _ in results), f"Got: {results}"
+
+
+# Group B: Numeric fraction edge cases
+
+def test_numeric_fraction_denominator_zero_skipped():
+    """5/0 must be skipped (division guard — denominator zero)."""
+    from groundguard.tiers.tier25_preprocessing import _extract_numerical_values
+    import math
+    results = _extract_numerical_values("5/0 of patients", is_claim=False)
+    values = [nv.value for nv, _, _ in results]
+    # 5/0 must not produce inf or NaN
+    assert not any(math.isinf(v) or math.isnan(v) for v in values)
+
+
+def test_numeric_fraction_numerator_zero_ok():
+    """0/5 = 0.0 is a valid fraction and should be extracted."""
+    from groundguard.tiers.tier25_preprocessing import _extract_numerical_values
+    results = _extract_numerical_values("0/5 of patients", is_claim=False)
+    values = [nv.value for nv, _, _ in results]
+    assert 0.0 in values
+
+
+def test_numeric_fraction_one_over_one():
+    """1/1 = 1.0 is a valid fraction and should be extracted."""
+    from groundguard.tiers.tier25_preprocessing import _extract_numerical_values
+    results = _extract_numerical_values("1/1 of patients", is_claim=False)
+    values = [nv.value for nv, _, _ in results]
+    assert 1.0 in values
+
+
+# Group C: Accounting negative — bare integers NOT converted
+
+def test_accounting_negative_bare_integer_not_converted():
+    """'(5)' and '(12)' without currency/magnitude/comma are NOT financial negatives."""
+    from groundguard.tiers.tier25_preprocessing import normalize_accounting_negatives
+    assert normalize_accounting_negatives("(5)") == "(5)"
+    assert normalize_accounting_negatives("(12)") == "(12)"
+    assert normalize_accounting_negatives("(5%)") == "(5%)"
+
+
+def test_accounting_negative_comma_grouped_is_converted():
+    """'(1,234)' — comma-grouped integer — IS a financial negative."""
+    from groundguard.tiers.tier25_preprocessing import normalize_accounting_negatives
+    result = normalize_accounting_negatives("(1,234)")
+    assert result == "-1234"
+
+
+# Group D: Abbreviated year range with Q-prefix
+
+def test_abbreviated_year_range_q1_prefix_escalates():
+    """'Q1 2025-26' fiscal quarter abbreviated range should escalate."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("Q1 2025-26 revenue guidance")
+    chunk = _make_chunk("s1", "Q1 2025 revenue was $100M")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "abbreviated_year_range"
+
+
+# Group E: Hedge scan sentence boundary
+
+def test_hedge_semicolon_does_not_stop_scan():
+    """Semicolon is NOT a sentence boundary — hedge before semicolon still applies."""
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    claim = "costs are at least; 100 patients enrolled"
+    offset = claim.index("100")
+    result = detect_hedge(claim, offset)
+    assert result == "lower", f"Expected 'lower', got {result!r}"
+
+
+def test_hedge_period_stops_scan():
+    """Period IS a sentence boundary — hedge from prior sentence is NOT matched."""
+    from groundguard.tiers.tier25_preprocessing import detect_hedge
+    claim = "costs are under budget. 50 patients enrolled"
+    offset = claim.index("50")
+    result = detect_hedge(claim, offset)
+    assert result is None, f"Expected None, got {result!r}"
