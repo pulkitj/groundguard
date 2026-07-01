@@ -339,6 +339,7 @@ _VERBAL_SCALE_PATTERN = re.compile(
     r's?\b',
     re.IGNORECASE
 )
+_VERBAL_COMPOUND_SEPARATOR = re.compile(r'^\s*(?:and|,)?\s*$')
 _VAGUE_QUANTIFIER_PATTERN = re.compile(
     r'\b(?:several|'
     r'dozens?\s+of|hundreds\s+of|thousands\s+of|'
@@ -916,6 +917,18 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                     evidence_bundle=build_evidence_bundle(ctx, chunks),
                 )
             # Entity noun present — verbal fraction is factual; fall through
+
+    # Verbal compound split guard — "one hundred and fifty thousand" → two adjacent matches → escalate
+    _verbal_matches = list(_VERBAL_SCALE_PATTERN.finditer(claim_text))
+    if len(_verbal_matches) >= 2:
+        for _i in range(len(_verbal_matches) - 1):
+            _between = claim_text[_verbal_matches[_i].end():_verbal_matches[_i + 1].start()]
+            if _VERBAL_COMPOUND_SEPARATOR.match(_between):
+                return Tier25Result(
+                    has_conflict=False,
+                    escalate_reason="verbal_compound_split",
+                    evidence_bundle=build_evidence_bundle(ctx, chunks),
+                )
 
     # Early detection of escalation patterns before range/number extraction
     if re.search(_ABBREV_YEAR_RANGE_PATTERN, claim_text):
