@@ -712,8 +712,8 @@ def test_t25p3_year_old_anchor_fast_accept():
 def test_t25p3_slash_rate_anchor_fast_accept():
     from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
     # "/" is a measurable unit rate anchor.
-    # We expect _extract_unit_anchor to return "/share" to preserve the denominator for comparison.
-    assert _extract_unit_anchor("/share dividend") == "/share"
+    # We expect _extract_unit_anchor to return "/" (bare form, never compound like "/share").
+    assert _extract_unit_anchor("/share dividend") == "/"
 
 
 def test_t25p3_rhetorical_noun_ways_discarded_in_run():
@@ -1017,21 +1017,22 @@ def test_t25p3_extract_unit_anchor_multi_word_entity():
     assert _extract_unit_anchor("amino acids found") == "_entity"
 
 
-def test_t25p3_differing_rate_denominators_conflict_or_escalate():
+def test_t25p3_differing_rate_denominators_now_same_unit():
     from groundguard.tiers.tier25_preprocessing import run
     from groundguard.models.internal import VerificationContext
     from groundguard.models.result import Source
     from groundguard.loaders.chunker import Chunk
 
-    # Claim $5/share vs source $5/hour should not verify because of differing denominators.
-    # It must either conflict (has_conflict=True) or escalate (has_conflict=False, escalate_reason="unit_label_mismatch").
+    # After the fix, $5/share and $5/hour both extract unit "/" (bare form, never compound).
+    # Both have value 5 and unit "/", so they now match (same number, same rate anchor unit).
+    # Previously /share and /hour were different units, but now they normalize to "/" for comparison.
     src = Source(source_id="s1", content="The price is $5/hour.")
     ctx = VerificationContext(claim="The price is $5/share.", sources=[src])
     chunk = Chunk(chunk_id="c1", source_id="s1", text_content="The price is $5/hour.",
                   char_start=0, char_end=21, token_count=5)
     result = run(ctx, [chunk])
-    # The result must either be a conflict or escalate
-    assert (result.has_conflict is True) or (result.has_conflict is False and getattr(result, "escalate_reason", None) == "unit_label_mismatch")
+    # Both extract "/" as unit anchor and 5 as value, so should match (no conflict)
+    assert result.has_conflict is False
 
 
 def test_t25p3_rhetorical_noun_in_source_not_discarded():
@@ -1802,3 +1803,18 @@ def test_t2_routing_with_escalate_reason_forces_llm_route():
     t25_res = Tier25Result(has_conflict=False, escalate_reason="ratio_times")
     res_escalated = route_claim(ctx, chunks, tier25_result=t25_res)
     assert res_escalated.decision == RoutingDecision.ESCALATE_TO_LLM
+
+
+def test_extract_unit_anchor_slash_always_returns_bare_slash():
+    from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
+    assert _extract_unit_anchor("/ share") == "/"
+    assert _extract_unit_anchor("/share") == "/"
+    assert _extract_unit_anchor("/ day") == "/"
+    assert _extract_unit_anchor("/") == "/"
+
+
+def test_extract_unit_anchor_per_always_returns_bare_per():
+    from groundguard.tiers.tier25_preprocessing import _extract_unit_anchor
+    assert _extract_unit_anchor("per share") == "per"
+    assert _extract_unit_anchor("per day") == "per"
+    assert _extract_unit_anchor("per") == "per"
