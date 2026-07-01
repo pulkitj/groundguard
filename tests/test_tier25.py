@@ -1915,3 +1915,26 @@ def test_non_ambiguous_decimal_does_not_escalate():
     chunk = _make_chunk("s1", "the share was 0.234 of revenue")
     result = run(ctx, [chunk])
     assert result.escalate_reason != "eu_integer_ambiguous"
+
+
+def test_extract_ranges_ignores_abbreviated_year_range():
+    """extract_ranges('2025-26') must not return (2025.0, 26.0)."""
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    result = extract_ranges("revenue in 2025-26")
+    assert result == [], f"Expected [], got {result}"
+
+
+def test_extract_ranges_ignores_fy_abbreviated_year_range():
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    result = extract_ranges("FY2024-25 results")
+    assert result == [], f"Expected [], got {result}"
+
+
+def test_extract_ranges_still_works_for_normal_ranges_after_masking():
+    """Normal numeric ranges are unaffected by the masking."""
+    from groundguard.tiers.tier25_preprocessing import extract_ranges
+    result = extract_ranges("between 10 and 20 percent")
+    assert len(result) == 1
+    lo, hi, raw = result[0]
+    assert lo == 10.0
+    assert hi == 20.0

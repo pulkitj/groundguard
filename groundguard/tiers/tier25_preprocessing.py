@@ -530,6 +530,9 @@ def _normalise_number(raw: str) -> float:
 
 
 def extract_ranges(text: str) -> list[tuple[float, float, str]]:
+    # Mask abbreviated year ranges before running range patterns to prevent
+    # "2025-26" from being parsed as (lo=2025, hi=26).
+    text = _ABBREV_YEAR_RANGE_PATTERN.sub(lambda m: ' ' * len(m.group(0)), text)
     matches_by_start = {}
     for pattern in _RANGE_PATTERNS:
         for match in pattern.finditer(text):
