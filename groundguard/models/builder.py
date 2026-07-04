@@ -151,6 +151,13 @@ class ResultBuilder:
                     page_hint=page_hints.get(v.source_id),
                     citation_confidence=confidence,
                 )
+            # Determine why this atom is UNVERIFIABLE, if it is:
+            # - LLM returned UNVERIFIABLE directly (Neutral verdict) → no_evidence
+            # - LLM returned VERIFIED but citation was missing → downgraded → no_citation
+            if atom_status == "UNVERIFIABLE":
+                unverifiable_reason = "no_citation" if v.status == "VERIFIED" else "no_evidence"
+            else:
+                unverifiable_reason = None
             atomic_claims.append(AtomicClaimResult(
                 claim_text=v.claim_text,
                 claim_type=claim_type,
@@ -161,6 +168,7 @@ class ResultBuilder:
                 reasoning_basis=v.reasoning_basis,
                 page_hint=page_hints.get(v.source_id) if v.source_id else None,
                 citation=citation_obj,
+                unverifiable_reason=unverifiable_reason,
             ))
 
         downgraded = any(

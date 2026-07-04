@@ -1,4 +1,4 @@
-"""Tests for ResultBuilder — TDD items #7, #16, #18, #20."""
+﻿"""Tests for ResultBuilder — TDD items #7, #16, #18, #20."""
 import pytest
 from groundguard.models.result import Source, VerificationResult, AtomicClaimResult
 from groundguard.models.internal import VerificationContext, ClassifiedAtom
@@ -278,3 +278,53 @@ def test_citation_invariant_raises_on_verified_null_citation():
 def test_citation_invariant_passes_for_unverifiable():
     from groundguard.core.result_builder import ResultBuilder
     ResultBuilder._assert_citation_invariant(verdict="UNVERIFIABLE", citation=None)
+
+
+def test_neutral_atom_has_no_evidence_reason():
+    """LLM returns Neutral → atom status UNVERIFIABLE with reason='no_evidence'."""
+    ctx = _make_ctx()
+    t3 = _make_t3_model(label="Neutral", verifications=[
+        AtomicVerification(
+            claim_text="Revenue was $5M.",
+            status="UNVERIFIABLE",
+            source_id=None,
+            source_excerpt=None,
+            reasoning_basis=None,
+        )
+    ])
+    result = ResultBuilder.build_llm_result(ctx, t3, "tier3_llm")
+    atom = result.atomic_claims[0]
+    assert atom.status == "UNVERIFIABLE"
+    assert atom.unverifiable_reason == "no_evidence"
+
+
+def test_citation_downgrade_has_no_citation_reason():
+    """Downgrade path: VERIFIED + no source_excerpt -> UNVERIFIABLE with reason='no_citation'.
+
+    Pydantic validator requires evidence for VERIFIED; we satisfy it with reasoning_basis,
+    but ctx atom type is Extractive so _safe_citation_status still triggers the downgrade.
+    """
+    ctx = _make_ctx()
+    t3 = _make_t3_model(label="Entailment", verifications=[
+        AtomicVerification(
+            claim_text="Revenue was $5M.",
+            status="VERIFIED",
+            source_id="doc.pdf",
+            source_excerpt=None,
+            reasoning_basis=["LLM inferred this from context."],
+        )
+    ])
+    result = ResultBuilder.build_llm_result(ctx, t3, "tier3_llm")
+    atom = result.atomic_claims[0]
+    assert atom.status == "UNVERIFIABLE"
+    assert atom.unverifiable_reason == "no_citation"
+
+
+def test_verified_atom_has_no_unverifiable_reason():
+    """VERIFIED atoms must have unverifiable_reason=None."""
+    ctx = _make_ctx()
+    t3 = _make_t3_model(label="Entailment")
+    result = ResultBuilder.build_llm_result(ctx, t3, "tier3_llm")
+    atom = result.atomic_claims[0]
+    assert atom.status == "VERIFIED"
+    assert atom.unverifiable_reason is None

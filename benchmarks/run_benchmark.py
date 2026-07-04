@@ -122,11 +122,10 @@ def run_groundguard_eval(samples, phase, model, auto_chunk_override, profile_ove
                 
                 # Extract routing metric counts
                 unverifiable_count = sum(1 for a in result.atomic_claims if a.status == "UNVERIFIABLE")
-                not_grounded_count = sum(1 for a in result.atomic_claims if a.status == "NOT_GROUNDED")
                 contradicted_count = sum(1 for a in result.atomic_claims if a.status == "CONTRADICTED")
                 
                 total_claims = len(result.atomic_claims)
-                has_contradiction = contradicted_count > 0 or not_grounded_count > 0
+                has_contradiction = contradicted_count > 0
                 unverifiable_ratio = (unverifiable_count / total_claims) if total_claims > 0 else 0.0
 
                 # In groundguard verify() pipeline, methods are tracked overall
@@ -141,13 +140,13 @@ def run_groundguard_eval(samples, phase, model, auto_chunk_override, profile_ove
                     "has_contradiction": has_contradiction,
                     "unverifiable_ratio": unverifiable_ratio,
                     "unverifiable_claim_count": unverifiable_count,
-                    "not_grounded_claim_count": not_grounded_count,
                     "contradicted_claim_count": contradicted_count,
                     "tier3_call_count": tier3_calls,
                     "branch_a_bypass_count": branch_a_bypasses,
                     "tier25_intercept_count": tier25_intercepts,
-                    "tier0_claim_count": total_claims,
                     "total_claim_count": total_claims,
+                    "factual_consistency_score": result.factual_consistency_score,
+                    "source_count": 1,
                     "latency_ms": latency_ms,
                     "cost_usd": result.total_cost_usd,
                     "phase": phase,
@@ -167,6 +166,16 @@ def run_groundguard_eval(samples, phase, model, auto_chunk_override, profile_ove
                     "ground_truth": gt_label,
                     "groundguard_status": "INVARIANT_ERROR",
                     "error": str(e),
+                    "has_contradiction": False,
+                    "unverifiable_ratio": None,
+                    "unverifiable_claim_count": None,
+                    "contradicted_count": None,
+                    "total_claim_count": None,
+                    "factual_consistency_score": None,
+                    "source_count": 1,
+                    "tier3_call_count": None,
+                    "branch_a_bypass_count": None,
+                    "tier25_intercept_count": None,
                     "latency_ms": latency_ms,
                     "cost_usd": cost,
                     "phase": phase,
@@ -189,7 +198,18 @@ def run_groundguard_eval(samples, phase, model, auto_chunk_override, profile_ove
                     "ground_truth": gt_label,
                     "groundguard_status": "ERROR",
                     "error": str(e),
+                    "has_contradiction": False,
+                    "unverifiable_ratio": None,
+                    "unverifiable_claim_count": None,
+                    "contradicted_count": None,
+                    "total_claim_count": None,
+                    "factual_consistency_score": None,
+                    "source_count": 1,
+                    "tier3_call_count": None,
+                    "branch_a_bypass_count": None,
+                    "tier25_intercept_count": None,
                     "latency_ms": latency_ms,
+                    "cost_usd": 0.0,
                     "phase": phase,
                     "auto_chunk": auto_chunk,
                     "model": model
@@ -342,7 +362,7 @@ def main():
     parser = argparse.ArgumentParser(description="groundguard RAGTruth Benchmark Suite")
     parser.add_argument("--phase", type=str, choices=["1", "3a", "3b", "3c"], help="groundguard benchmark phase")
     parser.add_argument("--sample-size", type=int, default=900, help="number of samples to evaluate (default: 900)")
-    parser.add_argument("--model", type=str, default="vertex_ai/gemini-2.5-flash", help="Model name (e.g. vertex_ai/gemini-2.5-flash)")
+    parser.add_argument("--model", type=str, required=True, help="Model name (e.g. vertex_ai/gemini-2.5-flash)")
     parser.add_argument("--auto-chunk", dest="auto_chunk", action="store_true", help="force enable auto_chunk")
     parser.add_argument("--no-auto-chunk", dest="auto_chunk", action="store_false", help="force disable auto_chunk")
     parser.set_defaults(auto_chunk=None)

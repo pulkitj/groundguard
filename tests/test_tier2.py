@@ -132,3 +132,42 @@ def test_branch_c_vocabulary_overlap_low_score(mocker):
 
     assert result.decision == RoutingDecision.ESCALATE_ALL_LOW_SCORE
     assert result.highest_score == pytest.approx(0.005)
+
+
+def test_branch_c_fires_for_negative_idf_micro_corpus():
+    """Single-source: BM25Okapi returns negative IDF scores when every query term appears in
+    the only document. Corpus fits within top_k — must use Branch C (document order),
+    not Branch B (arbitrary BM25-ranked top-k)."""
+    from groundguard.models.internal import RoutingDecision
+
+    # 3 identical chunks whose vocabulary fully overlaps the claim.
+    # With N=1 document, BM25Okapi IDF = log(0.5) - log(1.5) < 0 for every term.
+    chunks = [
+        Chunk(source_id="s1", text_content="revenue four million dollars", char_start=i * 30, char_end=(i + 1) * 30)
+        for i in range(3)
+    ]
+    # top_k=5 > 3 chunks → micro-corpus condition satisfied
+    ctx = _make_ctx(claim="revenue was four million dollars", top_k=5)
+    result = route_claim(ctx, chunks)
+
+    assert result.decision == RoutingDecision.ESCALATE_ALL_LOW_SCORE
+    assert len(result.top_k_chunks) == 3
+    # Document order preserved (chunk[0] first, not BM25-ranked)
+    assert result.top_k_chunks[0].char_start == 0
+
+
+def test_branch_b_used_when_negative_idf_corpus_exceeds_top_k():
+    """Negative IDF on a large corpus (> top_k) still routes to Branch B — only the
+    micro-corpus shortcut (len <= top_k) triggers Branch C."""
+    from groundguard.models.internal import RoutingDecision
+
+    # 10 identical chunks — exceeds top_k=5
+    chunks = [
+        Chunk(source_id="s1", text_content="revenue four million dollars", char_start=i * 30, char_end=(i + 1) * 30)
+        for i in range(10)
+    ]
+    ctx = _make_ctx(claim="revenue was four million dollars", top_k=5)
+    result = route_claim(ctx, chunks)
+
+    assert result.decision == RoutingDecision.ESCALATE_TO_LLM
+    assert len(result.top_k_chunks) == 5

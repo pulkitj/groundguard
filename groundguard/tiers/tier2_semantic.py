@@ -76,10 +76,14 @@ def route_claim(ctx: VerificationContext, all_chunks: list[Chunk], tier25_result
             top_k_chunks=top_k,
             highest_score=highest_score,
         )
-    elif highest_score <= ctx.tier2_low_score_floor and raw_highest >= 0.0:
-        # Branch C: all scores near zero — escalate all chunks (capped, document order)
-        # raw_highest >= 0 guards against BM25Okapi IDF artefacts (negative scores in tiny
-        # corpora still indicate vocabulary overlap; those fall through to Branch B instead)
+    elif highest_score <= ctx.tier2_low_score_floor and (
+        raw_highest >= 0.0 or len(all_chunks) <= ctx.top_k_chunks
+    ):
+        # Branch C: all scores near zero — escalate all chunks (capped, document order).
+        # raw_highest >= 0 is the normal guard: negative BM25 scores on tiny corpora are
+        # an IDF artefact (vocabulary overlap present) and normally fall to Branch B.
+        # Exception: when the entire corpus fits within top_k there are no chunks to drop,
+        # so BM25 ordering is meaningless — document order is always correct here.
         ALL_LOW_MAX_CHUNKS = ctx.top_k_chunks * 3
         escalate_chunks = all_chunks[:ALL_LOW_MAX_CHUNKS]  # document order, not BM25 rank
         return Tier2Result(

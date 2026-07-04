@@ -58,6 +58,7 @@ class AtomicClaimResult:
     page_hint: str | None = None
     verification_method: str | None = None
     citation: Citation | None = None
+    unverifiable_reason: Literal["no_evidence", "no_citation"] | None = None
 
 
 @dataclass

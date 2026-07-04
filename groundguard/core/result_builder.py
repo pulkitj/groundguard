@@ -51,6 +51,7 @@ class ResultBuilder:
         result = AtomicClaimResult(
             claim_text=claim, claim_type="Extractive", status=verdict,
             verification_method="tier3_llm", citation=effective_citation,
+            unverifiable_reason="no_evidence" if verdict == "UNVERIFIABLE" else None,
         )
         ResultBuilder._assert_citation_invariant(verdict, result.citation)
         return result
