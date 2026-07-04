@@ -208,9 +208,10 @@ class AtomicClaimResult:
     verification_method: str            # "tier2_lexical" | "tier25_numerical" | "tier3_llm"
     citation: Citation | None           # excerpt + char offsets; always non-null on VERIFIED
     is_valid: bool
+    unverifiable_reason: str | None     # set only when status="UNVERIFIABLE"
 ```
 
-Every `VERIFIED` result carries a `citation` with the exact excerpt and character offsets — a pointer, not just a score. `CONTRADICTED` results include the offending sentence. `UNVERIFIABLE` means your source documents don't contain enough information to decide — not that the claim is false.
+Every `VERIFIED` result carries a `citation` with the exact excerpt and character offsets — a pointer, not just a score. `CONTRADICTED` results include the offending sentence. `UNVERIFIABLE` means your source documents don't contain enough information to decide — not that the claim is false. When `status="UNVERIFIABLE"`, `unverifiable_reason` tells you why: `"no_evidence"` means the sources don't address the claim at all; `"no_citation"` means the LLM judged the claim supported but couldn't produce the required source excerpt, so the result was downgraded.
 
 ---
 
@@ -294,7 +295,7 @@ result = verify(claim="...", sources=[...], model="gpt-4o-mini", max_spend=0.50)
 from groundguard import estimate_verify_faithfulness_cost
 
 estimate = estimate_verify_faithfulness_cost(
-    output=llm_output,
+    claim=llm_output,
     sources=retrieved_docs,
     model="gpt-4o-mini",
 )

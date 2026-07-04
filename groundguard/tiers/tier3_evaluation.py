@@ -454,7 +454,7 @@ def evaluate_faithfulness(
                 tier_path=["evaluate_faithfulness"],
                 model=ctx.model or "",
                 cost_usd=0.0,
-                timestamp_utc=datetime.datetime.utcnow().isoformat(),
+                timestamp_utc=datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 profile_name=ctx.profile.name,
             ))
 

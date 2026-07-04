@@ -484,9 +484,7 @@ def _normalise_number(raw: str) -> float:
     elif raw.startswith('+'):
         sign = 1.0
         raw = raw[1:].strip()
-    is_usd_style_prefix = False
     if raw.startswith('$'):
-        is_usd_style_prefix = True
         raw = raw[1:].strip()
     else:
         non_usd_symbols = ('€', '£', '¥', '₹', '₩', '₽')
@@ -1042,6 +1040,8 @@ def run(ctx: "VerificationContext", chunks: list) -> Tier25Result:
                 break
         # Strip magnitude suffix if present
         _bare = re.sub(r'\s*[MBKTmbkt](?:illion)?$', '', _bare, flags=re.IGNORECASE).strip()
+        # Strip percent suffix so "1.234%" is still recognised as EU-ambiguous
+        _bare = _bare.rstrip('%').strip()
         if _is_eu_integer_ambiguous(_bare):
             return Tier25Result(
                 has_conflict=False,

@@ -31,6 +31,9 @@ A 1-1-1 split across 3 majority vote calls always yields `is_grounded=False` and
 **Tier 2.5 Determinism**
 Numerical conflicts (mismatched percentages, dollar amounts, years) are detected deterministically before any LLM call and returned as `status="CONTRADICTED"` with `total_cost_usd=0.0`.
 
+**`unverifiable_reason` on UNVERIFIABLE atoms**
+Every `AtomicClaimResult` with `status="UNVERIFIABLE"` has `unverifiable_reason` set to `"no_evidence"` or `"no_citation"` — never left `None`. `"no_evidence"` means the LLM returned a Neutral verdict (the sources don't address the claim). `"no_citation"` means the LLM returned `VERIFIED` but omitted the required source excerpt, so the result was downgraded. For all other statuses, `unverifiable_reason` is `None`.
+
 ---
 
 ## 2. Configurables
@@ -122,7 +125,7 @@ Groundguard requests structured JSON output via `response_format`. If a model ig
 The numerical conflict detector (`tier25_preprocessing`) uses regex patterns calibrated on English-language text (digits, `%`, `$`, metric suffixes `M/B/K`). Behaviour on non-English numerals or currency formats is undefined.
 
 **BM25 on single-sentence sources**
-BM25Okapi can return negative scores on very small corpora due to IDF artefacts. On single-sentence sources, routing may fall through to Branch B (`ESCALATE_TO_LLM`) even when Branch C (`ESCALATE_ALL_LOW_SCORE`) would be more appropriate. Use `auto_chunk=False` on very short sources to avoid this edge case.
+BM25Okapi can return negative scores on very small corpora due to IDF artefacts. When the entire corpus fits within `bm25_top_k` (e.g. a single-source micro-corpus), routing bypasses BM25 ordering entirely and escalates all chunks in document order via Branch C (`ESCALATE_ALL_LOW_SCORE`) — negative scores no longer cause a fallthrough to Branch B in this case. The negative-score guard still applies to corpora larger than `bm25_top_k`, where a negative highest score falls through to Branch B (`ESCALATE_TO_LLM`) instead of Branch C.
 
 **Context Window Exceedance with auto_chunk=False**
 `auto_chunk=False` with a source exceeding the model's context window produces `status="PARSE_ERROR"` — not a crash — but the cost of the failed call is still billed.

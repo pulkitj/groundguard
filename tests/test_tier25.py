@@ -1908,6 +1908,16 @@ def test_eu_integer_ambiguous_claim_escalates():
     assert result.escalate_reason == "eu_integer_ambiguous"
 
 
+def test_eu_integer_ambiguous_percentage_escalates():
+    """'1.234%' is EU-ambiguous (1,234% vs 1.234%) but the trailing '%' must not
+    bypass the ambiguity check."""
+    from groundguard.tiers.tier25_preprocessing import run
+    ctx = _make_ctx("the growth rate was 1.234%")
+    chunk = _make_chunk("s1", "the growth rate was 1.234%")
+    result = run(ctx, [chunk])
+    assert result.escalate_reason == "eu_integer_ambiguous"
+
+
 def test_non_ambiguous_decimal_does_not_escalate():
     """0.234 is unambiguously a US decimal; must not trigger eu_integer_ambiguous."""
     from groundguard.tiers.tier25_preprocessing import run
